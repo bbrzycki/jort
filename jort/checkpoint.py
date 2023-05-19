@@ -2,23 +2,23 @@ import numpy as np
 
 
 def format_reported_times(m, s=None, dec=1):
-    format_str = ''
+    format_str = ""
     if m >= 1.:
-        format_str += f'{m:.{dec}f} s' 
+        format_str += f"{m:.{dec}f} s" 
         if s is not None:
-            format_str += f' \u00B1 {s:.{dec}f} s'
+            format_str += f" \u00B1 {s:.{dec}f} s"
     elif m >= 1e-3:
-        format_str += f'{1e3 * m:.{dec}f} ms' 
+        format_str += f"{1e3 * m:.{dec}f} ms" 
         if s is not None:
-            format_str += f' \u00B1 {1e3 * s:.{dec}f} ms'
+            format_str += f" \u00B1 {1e3 * s:.{dec}f} ms"
     elif m >= 1e-6:
-        format_str += f'{1e6 * m:.{dec}f} us' 
+        format_str += f"{1e6 * m:.{dec}f} us" 
         if s is not None:
-            format_str += f' \u00B1 {1e6 * s:.{dec}f} us'
+            format_str += f" \u00B1 {1e6 * s:.{dec}f} us"
     else:
-        format_str += f'{1e9 * m:.{dec}f} ns' 
+        format_str += f"{1e9 * m:.{dec}f} ns" 
         if s is not None:
-            format_str += f' \u00B1 {1e9 * s:.{dec}f} ns'
+            format_str += f" \u00B1 {1e9 * s:.{dec}f} ns"
     return format_str
 
 
@@ -48,9 +48,9 @@ class Checkpoint(object):
                                               np.std(self.elapsed), 
                                               dec=dec)
         return (
-            f'{self.name} | '
-            f'{elapsed_stats} per iteration, '
-            f'n = {len(self.elapsed)}'
+            f"{self.name} | "
+            f"{elapsed_stats} per iteration, "
+            f"n = {len(self.elapsed)}"
         )
         
     def __str__(self):

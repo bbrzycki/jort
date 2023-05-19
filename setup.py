@@ -19,6 +19,7 @@ setuptools.setup(
 #     include_package_data=True,
     install_requires=[
        'numpy>=1.18.1',
+       'pyinstaller>=5.11.0',
     ],
     classifiers=(
         'Programming Language :: Python :: 3',

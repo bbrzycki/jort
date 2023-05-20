@@ -20,6 +20,8 @@ setuptools.setup(
     install_requires=[
        'numpy>=1.18.1',
        'pyinstaller>=5.11.0',
+       'humanfriendly>=10.0',
+       'tqdm>=4.64.1'
     ],
     classifiers=(
         'Programming Language :: Python :: 3',

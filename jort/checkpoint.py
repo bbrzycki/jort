@@ -1,4 +1,5 @@
 import numpy as np
+from . import datetime_utils
 
 
 def format_reported_times(m, s=None, dec=1):
@@ -25,7 +26,9 @@ def format_reported_times(m, s=None, dec=1):
 class Checkpoint(object):
     def __init__(self, name):
         """
-        Create checkpoint to save times
+        Create checkpoint to save times.
+
+        Start and stop times are in ISO format, while elapsed times are in seconds.
         """
         self.name = name
         self.starts = []
@@ -33,12 +36,13 @@ class Checkpoint(object):
         self.elapsed = []
         
     def _get_elapsed(self):
-        self.elapsed = [y - x for (x, y) in zip(self.starts, self.stops)]
+        self.elapsed = [datetime_utils.get_runtime(t1, t2) 
+                        for (t1, t2) in zip(self.starts, self.stops)]
         
     def add_times(self, start, stop):
         self.starts.append(start)
         self.stops.append(stop)
-        self.elapsed.append(stop - start)
+        self.elapsed.append(datetime_utils.get_runtime(start, stop))
     
     def report(self, dec=1):
         """

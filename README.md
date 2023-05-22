@@ -46,20 +46,21 @@ tr = jort.Tracker(logname='my_log.log', verbose=1)
 ```
 
 ## Function Decorators
-`jort` also supports timing functions with decorators, via `Tracker.time_func`. Demonstrating on the first example:
+`jort` also supports timing functions with decorators, via `Tracker.track`. Demonstrating on the first example:
 ```
 tr = jort.Tracker()
 
-@tr.time_func
+@tr.track
 def sleep_1s():
     sleep(1)
     
-@tr.time_func
+@tr.track
 def my_script():
     sleep(1)
     for _ in range(10):
         sleep_1s()
-        
+
+my_script() 
 tr.report()
 ```
 

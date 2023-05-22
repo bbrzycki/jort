@@ -1,7 +1,7 @@
 import sys
 import time
 import logging
-from functools import wraps
+import functools
 
 from . import checkpoint
 from . import datetime_utils
@@ -99,20 +99,28 @@ class Tracker(object):
         
     def clear_open(self):
         self.open_checkpoint_payloads = {}
-        
-    def time_func(self, f, report=False):
+
+    def track(self, f=None, callbacks=[], report=False):
         """
-        Function wrapper for tracker.
+        Function wrapper for tracker, to be used as a decorator.
+
+        Allows use without evaluation, in which case this method creates a checkpoint 
+        for this function.
+
+        With parameters, this method can execute callbacks and print a report. 
         """
-        @wraps(f)
-        def wrapper(*args, **kwargs):
-            self.start(name=f.__qualname__)
-            result = f(*args, **kwargs)
-            self.stop(name=f.__qualname__)
-            if report:
-                self.report()
-            return result
-        return wrapper
+        assert callable(f) or f is None
+        def decorator(func):
+            @functools.wraps(func)
+            def wrapper(*args, **kwargs):
+                self.start(name=func.__qualname__)
+                result = func(*args, **kwargs)
+                self.stop(name=func.__qualname__, callbacks=callbacks)
+                if report:
+                    self.report()
+                return result
+            return wrapper
+        return decorator(f) if f else decorator
         
     def report(self, dec=1):
         for name in self.checkpoints:
@@ -120,16 +128,14 @@ class Tracker(object):
             print(ckpt.report(dec=dec))
             
             
-def time_func(f):
+def track(f=None, callbacks=[], report=True):
     """
-    Independent function wrapper. Creates a one-off tracker and reports time.
+    Independent function wrapper, to be used as a decorator.
+    Creates a one-off tracker and reports time elapsed.
+
+    Allows use without evaluation, in which case this function times the input
+    function and prints a report.
+
+    With parameters, this method can execute callbacks as well as print a report. 
     """
-    return Tracker(verbose=0).time_func(f, report=True)
-    # @wraps(f)
-    # def wrapper(*args, **kwargs):
-    #     tr.start(name=f.__qualname__)
-    #     result = f(*args, **kwargs)
-    #     tr.stop(name=f.__qualname__)
-    #     tr.report()
-    #     return result
-    # return wrapper
+    return Tracker(verbose=0).track(f=f, callbacks=callbacks, report=report)

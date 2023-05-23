@@ -30,6 +30,12 @@ def main():
         help='PID of existing job to track',
     )
 
+    # Save stdout/stderr output
+    parser.add_argument('-o',
+                        '--output',
+                        action='store_true',
+                        help='save stdout/stderr output')
+
     # Send SMS at job completion
     parser.add_argument('-s',
                         '--sms',
@@ -57,23 +63,30 @@ def main():
     args = parser.parse_args()
 
     if args.init:
-        with open(f"{config.JORT_DIR}/config", "r") as f:
-            try:
-                config_data = json.load(f)
-            except json.decoder.JSONDecodeError:
-                config_data = {}
+        config_data = config.get_config_data()
         input_config_data = {
+            "machine": input('What name should this device go by? ({}) '
+                             .format(config_data.get("machine", ""))),
             "email": input('What email to use? ({}) '
-                           .format(config_data.get("email"))),
+                           .format(config_data.get("email", ""))),
+            "smtp_server": input('What SMTP server does your email use? ({}) '
+                                 .format(config_data.get("smtp_server", ""))),
+            "email_password": getpass.getpass('Email password? ({}) '
+                                              .format(("*"*16 
+                                                       if config_data.get("email_password", "") is not None 
+                                                       else ""))),
             "twilio_receive_number": input('What phone number to receive SMS? ({}) '
-                                           .format(config_data.get("twilio_receive_number"))),
+                                           .format(config_data.get("twilio_receive_number", ""))),
             "twilio_send_number": input('What Twilio number to send SMS? ({}) '
-                                        .format(config_data.get("twilio_send_number"))),
+                                        .format(config_data.get("twilio_send_number", ""))),
             "twilio_account_sid": input('Twilio Account SID? ({}) '
-                                        .format(config_data.get("twilio_account_sid"))),
+                                        .format(config_data.get("twilio_account_sid", ""))),
             "twilio_auth_token": getpass.getpass('Twilio Auth Token? ({}) '
-                                                 .format("*"*len(config_data.get("twilio_auth_token", "")))),
+                                                 .format(("*"*16 
+                                                         if config_data.get("twilio_auth_token", "") is not None 
+                                                         else "")))
         }
+        # Only save inputs if they aren't empty
         for key in input_config_data:
             if input_config_data[key] != "":
                 config_data[key] = input_config_data[key]
@@ -90,7 +103,7 @@ def main():
         joined_command = ' '.join(args.command)
         print(f"Tracking command '{joined_command}'")
         track_cli.track_new(joined_command,
-                            store_stdout=False,
+                            store_stdout=args.output,
                             save_filename=None,
                             send_sms=args.sms,
                             send_email=args.email,

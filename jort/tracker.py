@@ -3,6 +3,7 @@ import time
 import logging
 import functools
 
+from . import config
 from . import checkpoint
 from . import datetime_utils
         
@@ -14,6 +15,7 @@ class Tracker(object):
         1 for INFO, and 2 for DEBUG.
         """
         self.date_created = datetime_utils.get_iso_date()
+        self.machine = config.get_config_data().get("machine")
         self.checkpoints = {}
         self.open_checkpoint_payloads = {}
         self.logname = logname
@@ -46,10 +48,10 @@ class Tracker(object):
         self.open_checkpoint_payloads[name] = {
             "user_id": None,
             "job_id": None,
-            "short_name": name,
+            "name": name,
             "long_name": name,
             "status": "running",
-            "machine": None,
+            "machine": self.machine,
             "date_created": start,
             "date_modified": now,
             "runtime": datetime_utils.get_runtime(start, now),

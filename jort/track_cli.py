@@ -63,9 +63,9 @@ def track_new(command,
     if verbose:
         pprint(payload)
     if save_filename or store_stdout:
-        f = open(stdout_path, "a+")
-        f.write(f"$ {command}\n")
-        f.close()
+        with open(stdout_path, "a+") as f:
+            f.write(f"{command}\n")
+            f.write(f"--\n")
 
     buffer = ""
     temp_start = time.time()
@@ -74,9 +74,8 @@ def track_new(command,
             if verbose:
                 print("Buffered! (Not sent)", [buffer])
             if save_filename or store_stdout:
-                f = open(stdout_path, "a+")
-                f.write(buffer)
-                f.close()
+                with open(stdout_path, "a+") as f:
+                    f.write(buffer)
 
             payload['status'] = 'running'
             datetime_utils.update_payload_times(payload)
@@ -92,14 +91,15 @@ def track_new(command,
     if verbose:
         print("Buffered!", [buffer])
     if save_filename or store_stdout:
-        f = open(stdout_path, "a+")
-        f.write(buffer)
-        f.close()
+        with open(stdout_path, "a+") as f:
+            f.write(buffer)
+
+    p.wait()
 
     if verbose:
-        print("Exit code:", p.poll())
+        print(f"Exit code: {p.returncode}")
 
-    if p.returncode in [0, None]:
+    if p.returncode == 0:
         payload["status"] = "success"
     else:
         payload["status"] = "error"

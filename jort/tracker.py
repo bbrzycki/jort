@@ -1,6 +1,7 @@
 import sys
 import time
 import logging
+import traceback
 import functools
 
 from . import config
@@ -34,6 +35,11 @@ class Tracker(object):
                                 force=True)
         
     def start(self, name=None, date_created=None):
+        """
+        Open checkpoint and start timer. Creates initial information payload.
+
+        Option to set the creation date if tracking an existing process.
+        """
         if name == None:
             name = "Misc"
         if name in self.open_checkpoint_payloads:
@@ -66,6 +72,12 @@ class Tracker(object):
         logger.debug("Profiling block started.")
         
     def stop(self, name=None, callbacks=[]):
+        """
+        Close checkpoint and stop timer. Store start, stop, and elapsed times.
+        Process information payload and execute notification callbacks.
+
+        If checkpoint name isn't supplied, get the outermost checkpoint (FIFO).
+        """
         if name == None:
             name = list(self.open_checkpoint_payloads.keys())[-1]
         elif name not in self.open_checkpoint_payloads:
@@ -102,6 +114,17 @@ class Tracker(object):
     def clear_open(self):
         self.open_checkpoint_payloads = {}
 
+    def raise_error(self):
+        """
+        Update information payload with error details for the outermost checkpoint,
+        to only be used within the except block when exception handling.
+        """
+        name = list(self.open_checkpoint_payloads.keys())[0]
+        payload = self.open_checkpoint_payloads[name]
+        payload["status"] = "error"
+        payload["error_message"] = traceback.format_exc().strip().split('\n')[-1]
+        raise
+
     def track(self, f=None, callbacks=[], report=False):
         """
         Function wrapper for tracker, to be used as a decorator.
@@ -116,10 +139,17 @@ class Tracker(object):
             @functools.wraps(func)
             def wrapper(*args, **kwargs):
                 self.start(name=func.__qualname__)
-                result = func(*args, **kwargs)
-                self.stop(name=func.__qualname__, callbacks=callbacks)
-                if report:
-                    self.report()
+                try:
+                    result = func(*args, **kwargs)
+                except Exception as e:
+                    payload = self.open_checkpoint_payloads[func.__qualname__]
+                    payload["status"] = "error"
+                    payload["error_message"] = traceback.format_exc().strip().split('\n')[-1]
+                    raise
+                finally:
+                    self.stop(name=func.__qualname__, callbacks=callbacks)
+                    if report:
+                        self.report()
                 return result
             return wrapper
         return decorator(f) if f else decorator
@@ -133,7 +163,7 @@ class Tracker(object):
 def track(f=None, callbacks=[], report=True):
     """
     Independent function wrapper, to be used as a decorator.
-    Creates a one-off tracker and reports time elapsed.
+    Creates a one-off tracker and, by default, prints a report of time elapsed.
 
     Allows use without evaluation, in which case this function times the input
     function and prints a report.

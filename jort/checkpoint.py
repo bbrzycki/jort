@@ -48,14 +48,21 @@ class Checkpoint(object):
         """
         Return formatted statistics.
         """
-        elapsed_stats = format_reported_times(np.mean(self.elapsed), 
-                                              np.std(self.elapsed), 
-                                              dec=dec)
-        return (
-            f"{self.name} | "
-            f"{elapsed_stats} per iteration, "
-            f"n = {len(self.elapsed)}"
-        )
+        if len(self.elapsed) > 0:
+            elapsed_stats = format_reported_times(np.mean(self.elapsed), 
+                                                np.std(self.elapsed), 
+                                                dec=dec)
+            return (
+                f"{self.name} | "
+                f"{elapsed_stats} per iteration, "
+                f"n = {len(self.elapsed)}"
+            )
+        else:
+            return (
+                f"{self.name} | "
+                f"no complete iterations, "
+                f"n = {len(self.elapsed)}"
+            )
         
     def __str__(self):
         return self.report(dec=1)

@@ -30,11 +30,27 @@ class PrintReport(Callback):
         pass
 
     def format_message(self, payload):
-        return (
-            f'\n'
-            f'The job \'{payload["name"]}\' finished running '
-            f'in {humanfriendly.format_timespan(payload["runtime"])}'
-        )
+        if payload["status"] == "success":
+            return (
+                f'\n'
+                f'Your job `{payload["name"]}` successfully completed '
+                f'in {humanfriendly.format_timespan(payload["runtime"])}'
+            )
+        elif payload["status"] == "error":
+            error_text = payload["error_message"].split(":")[0]
+            return (
+                f'\n'
+                f'Your job `{payload["name"]}` exited in error ({error_text}) '
+                f'after {humanfriendly.format_timespan(payload["runtime"])}'
+            )
+        elif payload["status"] == "finished":
+            return (
+                f'\n'
+                f'Your job `{payload["name"]}` finished running '
+                f'in {humanfriendly.format_timespan(payload["runtime"])}'
+            )
+        else:
+            raise exceptions.JortException(f'Invalid status: {payload["status"]}')
 
     def execute(self, payload):
         print(self.format_message(payload))
@@ -63,18 +79,18 @@ class SMSNotification(Callback):
     def format_message(self, payload):
         if payload["status"] == "success":
             return (
-                f'Your job \'{payload["name"]}\' successfully completed '
+                f'Your job `{payload["name"]}` successfully completed '
                 f'in {humanfriendly.format_timespan(payload["runtime"])}'
             )
         elif payload["status"] == "error":
             error_text = payload["error_message"].split(":")[0]
             return (
-                f'Your job \'{payload["name"]}\' exited in error ({error_text}) '
+                f'Your job `{payload["name"]}` exited in error ({error_text}) '
                 f'after {humanfriendly.format_timespan(payload["runtime"])}'
             )
         elif payload["status"] == "finished":
             return (
-                f'Your job \'{payload["name"]}\' finished running '
+                f'Your job `{payload["name"]}` finished running '
                 f'in {humanfriendly.format_timespan(payload["runtime"])}'
             )
         else:

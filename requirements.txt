@@ -4,3 +4,5 @@ psutil>=5.9.0
 twilio>=8.2.0
 humanfriendly>=10.0
 tqdm>=4.64.1
+Sphinx>=6.2.1
+sphinx-book-theme>=1.0.1

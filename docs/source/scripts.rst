@@ -95,7 +95,7 @@ your own account.
 ^^^^^^^^^^^^^^^^^^^^^^^
 
 :code:`SMSNotification` texts a formatted message with the runtime. :code:`jort` uses 
-Twilio to handle SMS messaging. Twilio offers a free trial `here <https://support.twilio.com/hc/en-us/articles/223136107-How-does-Twilio-s-Free-Trial-work->`_.
+Twilio to handle SMS messaging. Twilio offers a `free trial tier <https://support.twilio.com/hc/en-us/articles/223136107-How-does-Twilio-s-Free-Trial-work->`_.
 
 You will need to enter login credentials with the command line tool :code:`jort -i`. 
 For SMS, :code:`jort` needs your phone number (to receive notifications), your Twilio

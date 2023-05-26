@@ -56,54 +56,6 @@ class PrintReport(Callback):
         print(self.format_message(payload))
 
 
-class SMSNotification(Callback):
-    """
-    Send SMS notifications to and from numbers managed by your Twilio account.
-    """
-    def __init__(self, receive_number=None):
-        config_data = config.get_config_data()
-        self.receive_number = config_data.get("twilio_receive_number")
-        self.send_number = config_data.get("twilio_send_number")
-        self.twilio_account_sid = config_data.get("twilio_account_sid")
-        self.twilio_auth_token = config_data.get("twilio_auth_token")
-        if receive_number is not None:
-            self.receive_number = receive_number
-
-        if self.twilio_account_sid is None or self.twilio_auth_token is None:
-            raise exceptions.JortCredentialException("Missing Twilio credentials, add with `jort -i` command")
-        if self.send_number is None:
-            raise exceptions.JortException("Missing Twilio sending number, add with `jort -i` command")
-        if self.receive_number is None:
-            raise exceptions.JortException("Missing receiving number")
-
-    def format_message(self, payload):
-        if payload["status"] == "success":
-            return (
-                f'Your job `{payload["name"]}` successfully completed '
-                f'in {humanfriendly.format_timespan(payload["runtime"])}'
-            )
-        elif payload["status"] == "error":
-            error_text = payload["error_message"].split(":")[0]
-            return (
-                f'Your job `{payload["name"]}` exited in error ({error_text}) '
-                f'after {humanfriendly.format_timespan(payload["runtime"])}'
-            )
-        elif payload["status"] == "finished":
-            return (
-                f'Your job `{payload["name"]}` finished running '
-                f'in {humanfriendly.format_timespan(payload["runtime"])}'
-            )
-        else:
-            raise exceptions.JortException(f'Invalid status: {payload["status"]}')
-    
-    def execute(self, payload):
-        client = twilio.rest.Client(self.twilio_account_sid,
-                                    self.twilio_auth_token)
-        message = client.messages.create(body=self.format_message(payload),
-                                         from_=self.send_number,
-                                         to=self.receive_number)
-
-
 class EmailNotification(Callback):
     """
     Send email notifications to and from your email account.
@@ -223,8 +175,52 @@ class EmailNotification(Callback):
             server.login(self.email, self.email_password)
             server.sendmail(message["From"], message["To"], message.as_string())
 
-            
 
+class SMSNotification(Callback):
+    """
+    Send SMS notifications to and from numbers managed by your Twilio account.
+    """
+    def __init__(self, receive_number=None):
+        config_data = config.get_config_data()
+        self.receive_number = config_data.get("twilio_receive_number")
+        self.send_number = config_data.get("twilio_send_number")
+        self.twilio_account_sid = config_data.get("twilio_account_sid")
+        self.twilio_auth_token = config_data.get("twilio_auth_token")
+        if receive_number is not None:
+            self.receive_number = receive_number
 
+        if self.twilio_account_sid is None or self.twilio_auth_token is None:
+            raise exceptions.JortCredentialException("Missing Twilio credentials, add with `jort -i` command")
+        if self.send_number is None:
+            raise exceptions.JortException("Missing Twilio sending number, add with `jort -i` command")
+        if self.receive_number is None:
+            raise exceptions.JortException("Missing receiving number")
+
+    def format_message(self, payload):
+        if payload["status"] == "success":
+            return (
+                f'Your job `{payload["name"]}` successfully completed '
+                f'in {humanfriendly.format_timespan(payload["runtime"])}'
+            )
+        elif payload["status"] == "error":
+            error_text = payload["error_message"].split(":")[0]
+            return (
+                f'Your job `{payload["name"]}` exited in error ({error_text}) '
+                f'after {humanfriendly.format_timespan(payload["runtime"])}'
+            )
+        elif payload["status"] == "finished":
+            return (
+                f'Your job `{payload["name"]}` finished running '
+                f'in {humanfriendly.format_timespan(payload["runtime"])}'
+            )
+        else:
+            raise exceptions.JortException(f'Invalid status: {payload["status"]}')
+    
+    def execute(self, payload):
+        client = twilio.rest.Client(self.twilio_account_sid,
+                                    self.twilio_auth_token)
+        message = client.messages.create(body=self.format_message(payload),
+                                         from_=self.send_number,
+                                         to=self.receive_number)
 
 

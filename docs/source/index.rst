@@ -12,8 +12,8 @@ Table of Contents
 .. toctree::
    :maxdepth: 1
    
-   getting_started
-   notifications
+   installation
+   scripts
    command_line
    jort
 

@@ -1,14 +1,23 @@
 # jort
 [![PyPI version](https://badge.fury.io/py/jort.svg)](https://badge.fury.io/py/jort) 
+[![Documentation Status](https://readthedocs.org/projects/jort/badge/?version=latest)](https://jort.readthedocs.io/en/latest/?badge=latest)
 
-Track, profile, and notify at custom checkpoints in your coding scripts
+Track, profile, and notify at custom checkpoints in your coding scripts. Also provides a command line tool to time shell commands. 
 
-## Installation
+### Table of Contents
+- [Installation](#installation)
+- [Script timing](#scripts)
+- [Command line timing](#cli)
+- [Notifications](#notifications)
+- [Future directions](#future)
+
+
+## Installation <a name="installation"></a>
 ```
 pip install jort
 ```
 
-## Usage
+## Script Timing <a name="scripts"></a>
 Use the `Tracker` to create named checkpoints throughout your code. Checkpoints need `start` and `stop` calls, and 
 multiple iterations are combined to summarize how long it takes to complete each leg. The `report` function
 prints the results from all checkpoints. If `stop` is not supplied a checkpoint name, the tracker will close and calculate elapsed time from the last open checkpoint (i.e. last in, first out).
@@ -35,17 +44,7 @@ my_script | 11.0 s ± 0.0 s per iteration, n = 1
 sleep_1s | 1.0 s ± 0.0 s per iteration, n = 10
 ```
 
-## Logging
-
-`jort` automatically logs results by default. You can change the destination filename, as well as the level of verbosity: 0 - no logging, 1 - only elapsed times, 2 - start and stop times. Defaults are `logname='tracker.log'` and `verbose=2`.
-```
-import jort
-from time import sleep
-
-tr = jort.Tracker(logname='my_log.log', verbose=1)
-```
-
-## Function Decorators
+### Function Decorators
 `jort` also supports timing functions with decorators, via `Tracker.track`. Demonstrating on the first example:
 ```
 tr = jort.Tracker()
@@ -70,6 +69,31 @@ my_script | 11.0 s ± 0.0 s per iteration, n = 1
 sleep_1s | 1.0 s ± 0.0 s per iteration, n = 10
 ```
 
-## Future Directions
+### Logging
+
+`jort` automatically logs results by default. You can change the destination filename, as well as the level of verbosity: 0 - no logging, 1 - only elapsed times, 2 - start and stop times. Defaults are `logname='tracker.log'` and `verbose=2`.
+```
+import jort
+from time import sleep
+
+tr = jort.Tracker(logname='my_log.log', verbose=1)
+```
+
+## Command Line Timing <a name="cli"></a>
+
+
+## Notifications <a name="notifications"></a>
+
+Notifications are handled by callbacks to timing functions. As of now, there are three main callbacks:
+```
+jort.PrintReport()
+jort.SMSNotification()
+jort.EmailNotification()
+```
+For SMS and e-mail notifications, you can enter credentials with the command `jort -i`. 
+
+SMS handling is done through Twilio, which offers a free trial tier. As of now, `jort` handles notifications locally, so you need to add your own credentials for each service. 
+
+## Future Directions <a name="future"></a>
 
 * Potential support for more complex profiling

@@ -73,7 +73,7 @@ def main():
                                  .format(config_data.get("smtp_server", ""))),
             "email_password": getpass.getpass('Email password? ({}) '
                                               .format(("*"*16 
-                                                       if config_data.get("email_password", "") is not None 
+                                                       if config_data.get("email_password") is not None 
                                                        else ""))),
             "twilio_receive_number": input('What phone number to receive SMS? ({}) '
                                            .format(config_data.get("twilio_receive_number", ""))),
@@ -83,7 +83,7 @@ def main():
                                         .format(config_data.get("twilio_account_sid", ""))),
             "twilio_auth_token": getpass.getpass('Twilio Auth Token? ({}) '
                                                  .format(("*"*16 
-                                                         if config_data.get("twilio_auth_token", "") is not None 
+                                                         if config_data.get("twilio_auth_token") is not None 
                                                          else "")))
         }
         # Only save inputs if they aren't empty

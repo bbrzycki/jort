@@ -6,6 +6,9 @@
 Welcome to jort's documentation!
 ================================
 
+Table of Contents
+-----------------
+
 .. toctree::
    :maxdepth: 1
    
@@ -16,7 +19,7 @@ Welcome to jort's documentation!
 
 
 Indices and tables
-==================
+------------------
 
 * :ref:`genindex`
 * :ref:`modindex`

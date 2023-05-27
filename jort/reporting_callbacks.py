@@ -1,3 +1,4 @@
+from abc import ABC, abstractmethod
 import os
 import json
 import smtplib
@@ -14,18 +15,32 @@ from . import config
 from . import exceptions
 
 
-class Callback(object):
+class Callback(ABC):
+    """
+    Abstract base class for notification callbacks.
+    """
     def __init__(self):
         pass
 
+    @abstractmethod
     def format_message(self, payload):
+        """
+        Format notification message as a string.
+        """
         pass
 
+    @abstractmethod
     def execute(self, payload):
+        """
+        Send notification given job status payload.
+        """
         pass
     
     
 class PrintReport(Callback):
+    """
+    Print job runtime on completion.
+    """
     def __init__(self):
         pass
 
@@ -58,7 +73,8 @@ class PrintReport(Callback):
 
 class EmailNotification(Callback):
     """
-    Send email notifications to and from your email account.
+    Send email notifications to and from your email account. Requires login 
+    credentials, which can be entered at the command line via :code:`jort -i`.
     """
     def __init__(self, email=None):
         config_data = config.get_config_data()
@@ -178,7 +194,8 @@ class EmailNotification(Callback):
 
 class SMSNotification(Callback):
     """
-    Send SMS notifications to and from numbers managed by your Twilio account.
+    Send SMS notifications to and from numbers managed by your Twilio account. Requires 
+    Twilio credentials, which can be entered at the command line via :code:`jort -i`.
     """
     def __init__(self, receive_number=None):
         config_data = config.get_config_data()

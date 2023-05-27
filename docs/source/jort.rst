@@ -5,7 +5,6 @@ jort.tracker module
 -------------------
 
 .. automodule:: jort.tracker 
-    :special-members: __init__
     :members:
     :undoc-members:
     :show-inheritance:
@@ -14,7 +13,6 @@ jort.checkpoint module
 ----------------------
 
 .. automodule:: jort.checkpoint 
-    :special-members: __init__
     :members:
     :undoc-members:
     :show-inheritance:

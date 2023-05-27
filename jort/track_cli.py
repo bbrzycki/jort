@@ -23,7 +23,23 @@ def track_new(command,
     """
     Track execution time and details of new command line process.
 
-    If update_period is negative, doesn't do payload updates.
+    Parameters
+    ----------
+    command : string
+        Command to execute, which is spawned as a subprocess
+    store_stdout : bool, optional
+        Option to write command output to file
+    save_filename : string, optional
+        Filename to which to save command output
+    send_sms : bool, optional
+        Option to send SMS notification on completion
+    send_email : bool, optional
+        Option to send e-mail notification on completion
+    verbose : bool, optional
+        Option to control how much information is printed in stdout
+    update_period : int, optional
+        Number of seconds between each payload update and stdout write. If 
+        :code:`update_period=-1`, as default, the only update occurs on completion.
     """
     callbacks = [reporting_callbacks.PrintReport()]
     if send_sms:
@@ -78,7 +94,7 @@ def track_new(command,
                     f.write(buffer)
 
             payload['status'] = 'running'
-            datetime_utils.update_payload_times(payload)
+            datetime_utils._update_payload_times(payload)
             if verbose:
                 pprint(payload)
 
@@ -110,12 +126,6 @@ def track_new(command,
     # if payload["runtime"] < 10:
     #     sys.exit("Job exited in 10 seconds -- no need to track!")
 
-    # if store_stdout:
-    #     s3.meta.client.upload_file(
-    #         stdout_path,
-    #         aws_credentials["bucket_name"],
-    #         "private/%s/%s" % (aws_credentials["identity_id"], stdout_fn)
-    #     )
     if verbose:
         pprint(payload)
 
@@ -136,7 +146,19 @@ def track_existing(pid,
     """
     Track execution time and details of existing command line process.
 
-    If update_period is negative, doesn't do payload updates.
+    Parameters
+    ----------
+    pid : int
+        Process ID of existing process
+    send_sms : bool, optional
+        Option to send SMS notification on completion
+    send_email : bool, optional
+        Option to send e-mail notification on completion
+    verbose : bool, optional
+        Option to control how much information is printed in stdout
+    update_period : int, optional
+        Number of seconds between each payload update. If 
+        :code:`update_period=-1`, as default, the only update occurs on completion.
     """
     callbacks = [reporting_callbacks.PrintReport()]
     if send_sms:
@@ -164,7 +186,7 @@ def track_existing(pid,
     while p.is_running():
         if update_period > 0 and time.time() - temp_start >= update_period:
             payload["status"] = "running"
-            datetime_utils.update_payload_times(payload)
+            datetime_utils._update_payload_times(payload)
             if verbose:
                 pprint(payload)
 

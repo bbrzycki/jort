@@ -1,3 +1,7 @@
+"""
+Initialize jort directories with correct permissions.
+"""
+
 import os
 import json
 from pathlib import Path

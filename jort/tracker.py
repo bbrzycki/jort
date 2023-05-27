@@ -10,11 +10,24 @@ from . import datetime_utils
         
 
 class Tracker(object):
+    """
+    A class to time sections of Python scripts by creating and closing timing
+    checkpoints. 
+
+    Parameters
+    ----------
+    logname : string
+        Filename for timing logs
+    verbose : int, optional
+        Options for verbosity. 0 for none, 1 for INFO, and 2 for DEBUG.
+
+    :ivar date_created: time of initialization
+    :ivar machine: name of local machine
+    :ivar checkpoints: dict of Checkpoints
+    :ivar open_checkpoint_payloads: dict of job status payloads for open Checkpoints
+    :ivar logname: log filename
+    """
     def __init__(self, logname="tracker.log", verbose=0):
-        """
-        Create tracker object. Arguments give logging options; verbosity 0 for none, 
-        1 for INFO, and 2 for DEBUG.
-        """
         self.date_created = datetime_utils.get_iso_date()
         self.machine = config.get_config_data().get("machine")
         self.checkpoints = {}
@@ -36,9 +49,15 @@ class Tracker(object):
         
     def start(self, name=None, date_created=None):
         """
-        Open checkpoint and start timer. Creates initial information payload.
+        Open checkpoint and start timer. Creates initial job status payload for use
+        with notifications.
 
-        Option to set the creation date if tracking an existing process.
+        Parameters
+        ----------
+        name : string
+            Checkpoint name
+        date_created : string, optional
+            For an existing process, instead set this input as the creation date
         """
         if name == None:
             name = "Misc"
@@ -74,9 +93,17 @@ class Tracker(object):
     def stop(self, name=None, callbacks=[]):
         """
         Close checkpoint and stop timer. Store start, stop, and elapsed times.
-        Process information payload and execute notification callbacks.
+        Process job status payload and execute notification callbacks.
 
-        If checkpoint name isn't supplied, get the outermost checkpoint (FIFO).
+        If checkpoint name isn't supplied, get the most recent checkpoint (last
+        in, first out; LIFO).
+
+        Parameters
+        ----------
+        name : string, optional
+            Checkpoint name
+        callbacks : list, optional
+            List of optional notification callbacks
         """
         if name == None:
             name = list(self.open_checkpoint_payloads.keys())[-1]
@@ -87,7 +114,7 @@ class Tracker(object):
         if payload["status"] == "running":
             payload["status"] = "success"
         start = payload["date_created"]
-        stop = datetime_utils.update_payload_times(payload)
+        stop = datetime_utils._update_payload_times(payload)
         self.checkpoints[name].add_times(start, stop)
 
         logger = logging.getLogger(f"{name}.stop")
@@ -101,7 +128,12 @@ class Tracker(object):
     def remove(self, name=None):
         """
         Option to remove checkpoint start instead of completing a profiling
-        set, for example on catching an error.
+        set, such as on catching an error.
+
+        Parameters
+        ----------
+        name : string, optional
+            Checkpoint name
         """
         if name == None:
             name = list(self.open_checkpoint_payloads.keys())[-1]
@@ -112,12 +144,15 @@ class Tracker(object):
             logger.debug("Profiling block removed.")
         
     def clear_open(self):
+        """
+        Clear all open checkpoints / open job status payloads.
+        """
         self.open_checkpoint_payloads = {}
 
     def raise_error(self):
         """
         Update information payload with error details for the outermost checkpoint,
-        to only be used within the except block when exception handling.
+        to only be used within the except block during exception handling.
         """
         name = list(self.open_checkpoint_payloads.keys())[0]
         payload = self.open_checkpoint_payloads[name]
@@ -127,12 +162,21 @@ class Tracker(object):
 
     def track(self, f=None, callbacks=[], report=False):
         """
-        Function wrapper for tracker, to be used as a decorator.
+        Function wrapper for tracker, to be used as a decorator. Creates a checkpoint
+        with the input function's name. 
 
-        Allows use without evaluation, in which case this method creates a checkpoint 
-        for this function.
+        Without parameters / evaluation, the decorator simply creates the checkpoint 
+        and times the input function. With parameters, this method can execute 
+        callbacks and print a report. 
 
-        With parameters, this method can execute callbacks and print a report. 
+        Parameters
+        ----------
+        f : func, optional
+            Function to decorate
+        callbacks : list, optional
+            List of optional notification callbacks
+        report : bool, optional
+            Option to print tracker report at function completion
         """
         assert callable(f) or f is None
         def decorator(func):
@@ -155,6 +199,14 @@ class Tracker(object):
         return decorator(f) if f else decorator
         
     def report(self, dec=1):
+        """
+        Print formatted runtime statistics for all checkpoints.
+
+        Parameters
+        ----------
+        dec : int
+            Decimal precision
+        """
         for name in self.checkpoints:
             ckpt = self.checkpoints[name]
             print(ckpt.report(dec=dec))
@@ -162,12 +214,20 @@ class Tracker(object):
             
 def track(f=None, callbacks=[], report=True):
     """
-    Independent function wrapper, to be used as a decorator.
-    Creates a one-off tracker and, by default, prints a report of time elapsed.
+    Independent function wrapper, to be used as a decorator, that creates a one-off
+    tracker.
+    
+    Without parameters / evaluation, the decorator simply times the input function
+    and prints a report by default. With parameters, this method can execute notification
+    callbacks and control whether or not to print a report. 
 
-    Allows use without evaluation, in which case this function times the input
-    function and prints a report.
-
-    With parameters, this method can execute callbacks as well as print a report. 
+    Parameters
+    ----------
+    f : func, optional
+        Function to decorate
+    callbacks : list, optional
+        List of optional notification callbacks
+    report : bool, optional
+        Option to print tracker report at function completion
     """
     return Tracker(verbose=0).track(f=f, callbacks=callbacks, report=report)

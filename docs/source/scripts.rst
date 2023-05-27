@@ -164,8 +164,8 @@ Logging
 -------
 
 :code:`jort` automatically logs results by default. You can change the destination filename,
-as well as the level of verbosity: 0 - no logging, 1 - only elapsed times, 
-2 - start and stop times. Defaults are :code:`logname='tracker.log'` and :code:`verbose=2`.
+as well as the level of verbosity (0: no logging; 1: only elapsed times; 
+2: start and stop times). Defaults are :code:`logname='tracker.log'` and :code:`verbose=2`.
 
 .. code-block:: Python
 

@@ -10,6 +10,7 @@
 import os
 import sys
 sys.path.insert(0, os.path.abspath('../../'))
+exec(open('jort/_version.py').read())
 
 # -- Project information -----------------------------------------------------
 # https://www.sphinx-doc.org/en/master/usage/configuration.html#project-information
@@ -17,7 +18,7 @@ sys.path.insert(0, os.path.abspath('../../'))
 project = 'jort'
 copyright = '2023, Bryan Brzycki'
 author = 'Bryan Brzycki'
-release = '1.2.0'
+release = __version__
 
 # -- General configuration ---------------------------------------------------
 # https://www.sphinx-doc.org/en/master/usage/configuration.html#general-configuration

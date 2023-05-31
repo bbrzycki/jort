@@ -1,9 +1,11 @@
 import os
 import sys
 import time
+import shlex
 import subprocess
 import uuid
 import psutil
+import shortuuid
 from tqdm import tqdm
 from pprint import pprint
 
@@ -14,8 +16,11 @@ from . import reporting_callbacks
 
 
 def track_new(command,
+              use_shell=False,
               store_stdout=False,
               save_filename=None,
+              to_db=False,
+              session_name=None,
               send_sms=False,
               send_email=False,
               verbose=False,
@@ -25,12 +30,18 @@ def track_new(command,
 
     Parameters
     ----------
-    command : string
+    command : str
         Command to execute, which is spawned as a subprocess
+    use_shell : bool, optional
+        Option to use shell execution for subprocess
     store_stdout : bool, optional
         Option to write command output to file
-    save_filename : string, optional
+    save_filename : str, optional
         Filename to which to save command output
+    to_db : bool, optional
+        Save all checkpoints to database
+    session_name : str, optional
+        Name of job session, if saving jobs to database
     send_sms : bool, optional
         Option to send SMS notification on completion
     send_email : bool, optional
@@ -48,31 +59,39 @@ def track_new(command,
         callbacks.append(reporting_callbacks.EmailNotification())
 
     # Key for storing stdout text to file
-    job_id = str(uuid.uuid4())
     if save_filename or store_stdout:
-        stdout_fn = f"{job_id}.txt"
+        stdout_fn = f"{shortuuid.uuid()}.txt"
         stdout_path = f"{config.JORT_DIR}/{stdout_fn}"
     else:
         stdout_fn = None
 
-    tr = tracker.Tracker()
+    tr = tracker.Tracker(to_db=to_db, session_name=session_name)
     tr.start(name=command)
 
     payload = tr.open_checkpoint_payloads[command]
 
-    payload['job_id'] = job_id
     payload['stdout_fn'] = stdout_fn
 
     # ACTUALLY START SUBPROCESS
     my_env = os.environ.copy()
     my_env["PYTHONUNBUFFERED"] = "1"
 
-    p = psutil.Popen(command.split(),
-                     env=my_env,
-                     stdout=subprocess.PIPE,
-                     stderr=subprocess.STDOUT,
-                     bufsize=1,
-                     universal_newlines=True)
+    if use_shell:
+        p = psutil.Popen(command,
+                         shell=True,
+                         env=my_env,
+                         stdout=subprocess.PIPE,
+                         stderr=subprocess.STDOUT,
+                         bufsize=1,
+                         universal_newlines=True)
+    else:
+        p = psutil.Popen(shlex.split(command),
+                         shell=False,
+                         env=my_env,
+                         stdout=subprocess.PIPE,
+                         stderr=subprocess.STDOUT,
+                         bufsize=1,
+                         universal_newlines=True)
     print(f"Subprocess PID: {p.pid}\n")
 
     # Create stdout file
@@ -139,6 +158,8 @@ def track_new(command,
 
 
 def track_existing(pid,
+                   to_db=False,
+                   session_name=None,
                    send_sms=False,
                    send_email=False,
                    verbose=False,
@@ -150,6 +171,10 @@ def track_existing(pid,
     ----------
     pid : int
         Process ID of existing process
+    to_db : bool, optional
+        Save all checkpoints to database
+    session_name : str, optional
+        Name of job session, if saving jobs to database
     send_sms : bool, optional
         Option to send SMS notification on completion
     send_email : bool, optional
@@ -171,10 +196,9 @@ def track_existing(pid,
 
     # Create process based on PID and grab relevant information
     p = psutil.Process(pid)
-    job_id = str(uuid.uuid4())
     command = " ".join(p.cmdline())
 
-    tr = tracker.Tracker()
+    tr = tracker.Tracker(to_db=to_db, session_name=session_name)
     tr.start(name=command, date_created=datetime_utils.get_iso_date(p.create_time()))
     payload = tr.open_checkpoint_payloads[command]
 

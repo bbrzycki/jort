@@ -1,8 +1,10 @@
 import sys
 import time
+import sqlite3
 import logging
 import traceback
 import functools
+import shortuuid
 
 from . import config
 from . import checkpoint
@@ -16,36 +18,59 @@ class Tracker(object):
 
     Parameters
     ----------
-    logname : string
+    logname : str
         Filename for timing logs
     verbose : int, optional
         Options for verbosity. 0 for none, 1 for INFO, and 2 for DEBUG.
+    to_db : bool, optional
+        Save all checkpoints to database
+    session_name : str, optional
+        Name of job session, if saving jobs to database
 
     :ivar date_created: time of initialization
     :ivar machine: name of local machine
     :ivar checkpoints: dict of Checkpoints
     :ivar open_checkpoint_payloads: dict of job status payloads for open Checkpoints
     :ivar logname: log filename
+    :iver to_db: option to save all checkpoints to database
+    :iver session_name: name of job session
     """
-    def __init__(self, logname="tracker.log", verbose=0):
+    def __init__(self, logname="tracker.log", verbose=0, to_db=False, session_name=None):
         self.date_created = datetime_utils.get_iso_date()
         self.machine = config.get_config_data().get("machine")
         self.checkpoints = {}
         self.open_checkpoint_payloads = {}
+
+        self.to_db = to_db
+        self.session_id = shortuuid.uuid()
+        self.session_name = session_name
+        if self.session_name is None:
+            self.session_name = self.session_id
+        if self.to_db:
+            con = sqlite3.connect(f"{config.JORT_DIR}/jort.db")
+            cur = con.cursor()
+            sql = (
+                "INSERT INTO sessions VALUES(?, ?)"
+            )
+            cur.execute(sql, (self.session_id, self.session_name))
+            con.commit()
+            con.close()
+
         self.logname = logname
         if verbose != 0:
+            print(f"Starting session `{self.session_name}`")
             if verbose == 1:
                 level = logging.INFO
             else:
                 level = logging.DEBUG
-            file_handler = logging.FileHandler(filename=self.logname, mode="w")
-            stdout_handler = logging.StreamHandler(sys.stdout)
-            handlers = [file_handler, stdout_handler]
+            # file_handler = logging.FileHandler(filename=self.logname, mode="w")
+            # stdout_handler = logging.StreamHandler(sys.stdout)
+            # handlers = [file_handler, stdout_handler]
 
-            logging.basicConfig(level=level,
-                                format="%(asctime)s %(name)-15s %(levelname)-8s %(message)s",
-                                handlers=handlers, 
-                                force=True)
+            # logging.basicConfig(level=level,
+            #                     format="%(asctime)s %(name)-15s %(levelname)-8s %(message)s",
+            #                     handlers=handlers, 
+            #                     force=True)
         
     def start(self, name=None, date_created=None):
         """
@@ -54,9 +79,9 @@ class Tracker(object):
 
         Parameters
         ----------
-        name : string
+        name : str
             Checkpoint name
-        date_created : string, optional
+        date_created : str, optional
             For an existing process, instead set this input as the creation date
         """
         if name == None:
@@ -72,7 +97,8 @@ class Tracker(object):
 
         self.open_checkpoint_payloads[name] = {
             "user_id": None,
-            "job_id": None,
+            "job_id": shortuuid.uuid(),
+            "session_id": self.session_id,
             "name": name,
             "long_name": name,
             "status": "running",
@@ -90,7 +116,7 @@ class Tracker(object):
         logger = logging.getLogger(f"{name}.start")
         logger.debug("Profiling block started.")
         
-    def stop(self, name=None, callbacks=[]):
+    def stop(self, name=None, callbacks=[], to_db=False):
         """
         Close checkpoint and stop timer. Store start, stop, and elapsed times.
         Process job status payload and execute notification callbacks.
@@ -100,7 +126,7 @@ class Tracker(object):
 
         Parameters
         ----------
-        name : string, optional
+        name : str, optional
             Checkpoint name
         callbacks : list, optional
             List of optional notification callbacks
@@ -122,6 +148,29 @@ class Tracker(object):
         formatted_runtime = checkpoint.format_reported_times(self.checkpoints[name].elapsed[-1])
         logger.info(f"Elapsed time: {formatted_runtime}")
 
+        if self.to_db or to_db:
+            con = sqlite3.connect(f"{config.JORT_DIR}/jort.db")
+            cur = con.cursor()
+            sql = (
+                "INSERT INTO jobs VALUES("
+                "    :job_id,"
+                "    :session_id,"
+                "    :name,"
+                "    :status,"
+                "    :machine,"
+                "    :date_created,"
+                "    :date_modified,"
+                "    :runtime,"
+                "    :stdout_fn,"
+                "    :error_message"
+                ")"
+            )
+            cur.execute(sql, payload)
+            job_id = cur.lastrowid
+            con.commit()
+            con.close()
+
+
         for callback in callbacks:
             callback.execute(payload=payload)
         
@@ -132,7 +181,7 @@ class Tracker(object):
 
         Parameters
         ----------
-        name : string, optional
+        name : str, optional
             Checkpoint name
         """
         if name == None:

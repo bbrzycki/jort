@@ -1,7 +1,5 @@
 import setuptools
 
-__version__ = '1.2.0'
-
 with open('README.md', 'r') as fh:
     long_description = fh.read()
 
@@ -14,6 +12,7 @@ entry_points = {
 with open("requirements.txt", "r") as f:
     install_requires = f.readlines()
 
+exec(open('jort/_version.py').read())
 setuptools.setup(
     name='jort',
     version=__version__,

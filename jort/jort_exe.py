@@ -7,6 +7,7 @@ import argparse
 
 from . import config
 from . import track_cli
+from ._version import __version__
 
 
 def main():
@@ -36,6 +37,10 @@ def main():
                         action='store_true',
                         help='save stdout/stderr output')
 
+    parser.add_argument('--use-shell',
+                        action='store_true',
+                        help='use shell execution for tracking new process')
+
     # Send SMS at job completion
     parser.add_argument('-s',
                         '--sms',
@@ -47,18 +52,37 @@ def main():
                         '--email',
                         action='store_true',
                         help='send email at job exit')
+
+
+    parser.add_argument('-d',
+                        '--database',
+                        action='store_true',
+                        help='store job in database')
+    parser.add_argument(
+        '--session',
+        nargs=1,
+        type=str,
+        help='job session name, for database',
+    )
     
     # Init / info
     parser.add_argument('-i',
                         '--init',
                         action='store_true',
-                        help='enter information needed for notifcations')
+                        help='enter information needed for notifications')
 
     # Verbose
     parser.add_argument('-v',
                         '--verbose',
                         action='store_true',
                         help='print payloads and all info')
+
+    # Version
+    parser.add_argument('-V',
+                        '--version',
+                        action='version',
+                        version=f'%(prog)s {__version__}'
+                        )
 
     args = parser.parse_args()
 
@@ -103,8 +127,11 @@ def main():
         joined_command = ' '.join(args.command)
         print(f"Tracking command '{joined_command}'")
         track_cli.track_new(joined_command,
+                            use_shell=args.use_shell,
                             store_stdout=args.output,
                             save_filename=None,
+                            to_db=args.database,
+                            session_name=args.session,
                             send_sms=args.sms,
                             send_email=args.email,
                             verbose=args.verbose)
@@ -113,6 +140,8 @@ def main():
         # aws_credentials = auth.login()
         print(f"Tracking existing process PID at: {args.pid[0]}")
         track_cli.track_existing(args.pid[0],
+                                 to_db=args.database,
+                                 session_name=args.session,
                                  send_sms=args.sms,
                                  send_email=args.email,
                                  verbose=args.verbose)

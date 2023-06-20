@@ -5,3 +5,5 @@ twilio>=8.2.0
 humanfriendly>=10.0
 tqdm>=4.64.1
 sphinx-rtd-theme==1.2.1
+shortuuid==1.0.11
+click>=8.1.3

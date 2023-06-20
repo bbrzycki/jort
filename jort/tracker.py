@@ -41,28 +41,35 @@ class Tracker(object):
         self.checkpoints = {}
         self.open_checkpoint_payloads = {}
 
+        # Manage session name, id; if session name is provided, get the id from db
+        con = sqlite3.connect(f"{config.JORT_DIR}/jort.db")
+        cur = con.cursor()
         self.to_db = to_db
-        self.session_id = shortuuid.uuid()
         self.session_name = session_name
-        if self.session_name is None:
+        self.session_id = shortuuid.uuid()
+        if self.session_name is not None:
+            sql = "SELECT session_id FROM sessions WHERE session_name == ?"
+            res = cur.execute(sql, (self.session_name,))
+            row = res.fetchone()
+            if row is not None:
+                self.session_id = row[0]
+        else:
             self.session_name = self.session_id
-        if self.to_db:
-            con = sqlite3.connect(f"{config.JORT_DIR}/jort.db")
-            cur = con.cursor()
-            sql = (
-                "INSERT INTO sessions VALUES(?, ?)"
-            )
-            cur.execute(sql, (self.session_id, self.session_name))
-            con.commit()
-            con.close()
+            if self.to_db:
+                sql = (
+                    "INSERT INTO sessions VALUES(?, ?)"
+                )
+                cur.execute(sql, (self.session_id, self.session_name))
+                con.commit()
+        con.close()
 
         self.logname = logname
         if verbose != 0:
             print(f"Starting session `{self.session_name}`")
-            if verbose == 1:
-                level = logging.INFO
-            else:
-                level = logging.DEBUG
+            # if verbose == 1:
+            #     level = logging.INFO
+            # else:
+            #     level = logging.DEBUG
             # file_handler = logging.FileHandler(filename=self.logname, mode="w")
             # stdout_handler = logging.StreamHandler(sys.stdout)
             # handlers = [file_handler, stdout_handler]
@@ -110,7 +117,7 @@ class Tracker(object):
             "unread": True,
             "error_message": None,
         }
-
+        print(__name__)
         if name not in self.checkpoints:
             self.checkpoints[name] = checkpoint.Checkpoint(name)
         logger = logging.getLogger(f"{name}.start")
@@ -151,6 +158,12 @@ class Tracker(object):
         if self.to_db or to_db:
             con = sqlite3.connect(f"{config.JORT_DIR}/jort.db")
             cur = con.cursor()
+            # Make sure session info is included in db
+            sql = (
+                "INSERT OR IGNORE INTO sessions VALUES(?, ?)"
+            )
+            cur.execute(sql, (self.session_id, self.session_name))
+            # Insert job into db
             sql = (
                 "INSERT INTO jobs VALUES("
                 "    :job_id,"
@@ -169,7 +182,6 @@ class Tracker(object):
             job_id = cur.lastrowid
             con.commit()
             con.close()
-
 
         for callback in callbacks:
             callback.execute(payload=payload)

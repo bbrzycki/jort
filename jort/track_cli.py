@@ -1,6 +1,7 @@
 import os
 import sys
 import time
+import sqlite3
 import shlex
 import subprocess
 import uuid
@@ -21,6 +22,7 @@ def track_new(command,
               save_filename=None,
               to_db=False,
               session_name=None,
+              unique=False,
               send_sms=False,
               send_email=False,
               verbose=False,
@@ -42,6 +44,8 @@ def track_new(command,
         Save all checkpoints to database
     session_name : str, optional
         Name of job session, if saving jobs to database
+    unique : bool, optional
+        Whether to skip job, if already successfully run and stored in database
     send_sms : bool, optional
         Option to send SMS notification on completion
     send_email : bool, optional
@@ -66,6 +70,21 @@ def track_new(command,
         stdout_fn = None
 
     tr = tracker.Tracker(to_db=to_db, session_name=session_name)
+    if unique:
+        con = sqlite3.connect(f"{config.JORT_DIR}/jort.db")
+        cur = con.cursor()
+        sql = (
+            "SELECT status FROM jobs WHERE session_id == ? AND job_name == ?"
+        )
+        res = cur.execute(sql, (tr.session_id, command))
+        for row in res.fetchall():
+            status = row[0]
+            if status == "success":
+                print("Found matching job that completed successfully; skipping...")
+                con.close()
+                return
+        con.close()
+
     tr.start(name=command)
 
     payload = tr.open_checkpoint_payloads[command]

@@ -52,7 +52,7 @@ Notifications are handled by callbacks to timing functions. As of now, there are
 ```
 jort.PrintReport()
 jort.EmailNotification()
-jort.SMSNotification()
+jort.TextNotification()
 ```
 To use notifications, add callbacks to tracking functions:
 ```
@@ -65,7 +65,7 @@ def my_script():
     [...]
 ```
 
-For SMS and e-mail notifications, you can enter credentials with the command `jort -i`. 
+For SMS text and e-mail notifications, you can enter credentials with the command `jort config`. 
 
 SMS handling is done through Twilio, which offers a [free trial tier](https://support.twilio.com/hc/en-us/articles/223136107-How-does-Twilio-s-Free-Trial-work-). As of now, `jort` handles notifications locally, so you need to add your own credentials for each service. 
 

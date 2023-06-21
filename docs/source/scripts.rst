@@ -48,7 +48,7 @@ main callbacks:
 
     jort.PrintReport()
     jort.EmailNotification()
-    jort.SMSNotification()
+    jort.TextNotification()
 
 Notifications are executed at the end of checkpoints using the function
 :code:`Tracker.stop` with argument :code:`callbacks`, which accepts a list of 
@@ -62,7 +62,7 @@ If used in the callback of a :code:`jort` :ref:`function decorator <funcdec>`  o
     tr = jort.Tracker()
     tr.start()
     # your code here
-    tr.stop(callbacks=[jort.PrintReport(), jort.EmailNotification(), jort.SMSNotification()])
+    tr.stop(callbacks=[jort.PrintReport(), jort.EmailNotification(), jort.TextNotification()])
 
 
 :code:`PrintReport`
@@ -82,7 +82,7 @@ other job details. If used to time a command line program, this callback can be 
 to send program output as an e-mail attachment.
 
 Of course, to send e-mails from your account, you will need to enter login credentials
-with the command line tool :code:`jort -i`. For e-mail, :code:`jort` needs the SMTP server 
+with the command line tool :code:`jort config`. For e-mail, :code:`jort` needs the SMTP server 
 (for Gmail this is `smtp.gmail.com`), your e-mail, and either a password
 or app password. At the moment, you can only send notification e-mails to yourself, from
 your own account.
@@ -91,20 +91,20 @@ your own account.
 
     tr.stop(callbacks=[jort.EmailNotification()])
 
-:code:`SMSNotification`
+:code:`TextNotification`
 ^^^^^^^^^^^^^^^^^^^^^^^
 
-:code:`SMSNotification` texts a formatted message with the runtime. :code:`jort` uses 
+:code:`TextNotification` texts a formatted message with the runtime. :code:`jort` uses 
 Twilio to handle SMS messaging. Twilio offers a `free trial tier <https://support.twilio.com/hc/en-us/articles/223136107-How-does-Twilio-s-Free-Trial-work->`_.
 
-You will need to enter login credentials with the command line tool :code:`jort -i`. 
+You will need to enter login credentials with the command line tool :code:`jort config`. 
 For SMS, :code:`jort` needs your phone number (to receive notifications), your Twilio
 number, account SID, and auth token. If you are using the free trial, you may only send 
 SMS messages to verified phone numbers on your Twilio account.
 
 .. code-block:: Python 
 
-    tr.stop(callbacks=[jort.SMSNotification()])
+    tr.stop(callbacks=[jort.TextNotification()])
 
 .. _funcdec:
 

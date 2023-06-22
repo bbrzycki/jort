@@ -26,7 +26,7 @@ flags, respectively. Note that both methods require appropriate login credential
 which can be entered at the command line using :code:`jort config`. 
 
 To save job details to database, add the :code:`-d` flag. You can specify the session name 
-with :code:`-s`, and have `jort` skip jobs that both are already saved in the database under 
+with :code:`-s`, and have :code:`jort` skip jobs that both are already saved in the database under 
 the same session and have completed successfully via the :code:`-u` option.
 
 The :code:`jort` tool spawns a subprocess with your command, so it can capture all 

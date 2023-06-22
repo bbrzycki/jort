@@ -11,7 +11,7 @@ from email.mime.multipart import MIMEMultipart
 from email.mime.application import MIMEApplication
 import twilio.rest
 import humanfriendly
-from . import config
+from . import _config
 from . import exceptions
 
 
@@ -77,7 +77,7 @@ class EmailNotification(Callback):
     credentials, which can be entered at the command line via :code:`jort -i`.
     """
     def __init__(self, email=None):
-        config_data = config.get_config_data()
+        config_data = _config.get_config_data()
         self.email = config_data.get("email")
         self.smtp_server = config_data.get("smtp_server")
         self.email_password = config_data.get("email_password")
@@ -171,7 +171,7 @@ class EmailNotification(Callback):
         message.attach(MIMEText(email_data["html_body"], "html"))
 
         if payload["stdout_fn"] is not None:
-            stdout_path = f'{config.JORT_DIR}/{payload["stdout_fn"]}'
+            stdout_path = f'{_config.JORT_DIR}/{payload["stdout_fn"]}'
             with open(stdout_path, "r") as f:
                 attachment = MIMEApplication(f.read(), _subtype="txt")
             attachment.add_header("Content-Disposition", "attachment", filename="output.txt")
@@ -192,13 +192,13 @@ class EmailNotification(Callback):
             server.sendmail(message["From"], message["To"], message.as_string())
 
 
-class SMSNotification(Callback):
+class TextNotification(Callback):
     """
     Send SMS notifications to and from numbers managed by your Twilio account. Requires 
     Twilio credentials, which can be entered at the command line via :code:`jort -i`.
     """
     def __init__(self, receive_number=None):
-        config_data = config.get_config_data()
+        config_data = _config.get_config_data()
         self.receive_number = config_data.get("twilio_receive_number")
         self.send_number = config_data.get("twilio_send_number")
         self.twilio_account_sid = config_data.get("twilio_account_sid")

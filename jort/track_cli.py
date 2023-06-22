@@ -2,6 +2,7 @@ import os
 import sys
 import time
 import sqlite3
+import contextlib
 import shlex
 import subprocess
 import uuid
@@ -12,7 +13,7 @@ from pprint import pprint
 
 from . import tracker
 from . import datetime_utils
-from . import config
+from . import _config
 from . import reporting_callbacks
 
 
@@ -23,7 +24,7 @@ def track_new(command,
               to_db=False,
               session_name=None,
               unique=False,
-              send_sms=False,
+              send_text=False,
               send_email=False,
               verbose=False,
               update_period=-1):
@@ -46,7 +47,7 @@ def track_new(command,
         Name of job session, if saving jobs to database
     unique : bool, optional
         Whether to skip job, if already successfully run and stored in database
-    send_sms : bool, optional
+    send_text : bool, optional
         Option to send SMS notification on completion
     send_email : bool, optional
         Option to send e-mail notification on completion
@@ -57,33 +58,32 @@ def track_new(command,
         :code:`update_period=-1`, as default, the only update occurs on completion.
     """
     callbacks = [reporting_callbacks.PrintReport()]
-    if send_sms:
-        callbacks.append(reporting_callbacks.SMSNotification())
+    if send_text:
+        callbacks.append(reporting_callbacks.TextNotification())
     if send_email:
         callbacks.append(reporting_callbacks.EmailNotification())
 
     # Key for storing stdout text to file
     if save_filename or store_stdout:
         stdout_fn = f"{shortuuid.uuid()}.txt"
-        stdout_path = f"{config.JORT_DIR}/{stdout_fn}"
+        stdout_path = f"{_config.JORT_DIR}/{stdout_fn}"
     else:
         stdout_fn = None
 
     tr = tracker.Tracker(to_db=to_db, session_name=session_name)
     if unique:
-        con = sqlite3.connect(f"{config.JORT_DIR}/jort.db")
-        cur = con.cursor()
-        sql = (
-            "SELECT status FROM jobs WHERE session_id == ? AND job_name == ?"
-        )
-        res = cur.execute(sql, (tr.session_id, command))
-        for row in res.fetchall():
-            status = row[0]
-            if status == "success":
-                print("Found matching job that completed successfully; skipping...")
-                con.close()
-                return
-        con.close()
+        with contextlib.closing(sqlite3.connect(f"{_config.JORT_DIR}/jort.db")) as con:
+            cur = con.cursor()
+            sql = (
+                "SELECT status FROM jobs WHERE session_id == ? AND job_name == ?"
+            )
+            res = cur.execute(sql, (tr.session_id, command))
+            for row in res.fetchall():
+                status = row[0]
+                if status == "success":
+                    print("Found matching job that completed successfully; skipping...")
+                    con.close()
+                    return
 
     tr.start(name=command)
 
@@ -142,6 +142,7 @@ def track_new(command,
         sys.stdout.write(line)
         buffer += line
 
+
     if verbose:
         print("Buffered!", [buffer])
     if save_filename or store_stdout:
@@ -159,7 +160,6 @@ def track_new(command,
         payload["status"] = "error"
         payload["error_message"] = line
     tr.stop(callbacks=callbacks)
-
     # print("")
     # if payload["runtime"] < 10:
     #     sys.exit("Job exited in 10 seconds -- no need to track!")
@@ -179,7 +179,7 @@ def track_new(command,
 def track_existing(pid,
                    to_db=False,
                    session_name=None,
-                   send_sms=False,
+                   send_text=False,
                    send_email=False,
                    verbose=False,
                    update_period=-1):
@@ -194,7 +194,7 @@ def track_existing(pid,
         Save all checkpoints to database
     session_name : str, optional
         Name of job session, if saving jobs to database
-    send_sms : bool, optional
+    send_text : bool, optional
         Option to send SMS notification on completion
     send_email : bool, optional
         Option to send e-mail notification on completion
@@ -205,8 +205,8 @@ def track_existing(pid,
         :code:`update_period=-1`, as default, the only update occurs on completion.
     """
     callbacks = [reporting_callbacks.PrintReport()]
-    if send_sms:
-        callbacks.append(reporting_callbacks.SMSNotification())
+    if send_text:
+        callbacks.append(reporting_callbacks.TextNotification())
     if send_email:
         callbacks.append(reporting_callbacks.EmailNotification())
 

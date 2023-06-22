@@ -5,7 +5,7 @@ with open('README.md', 'r') as fh:
 
 entry_points = {
     'console_scripts': [
-        'jort = jort.jort_exe:main'
+        'jort = jort.jort_exe:cli'
     ]
 }
 

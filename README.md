@@ -86,6 +86,8 @@ def my_script():
 
 ## Command Line Timing
 
+![jort help message](jort_help.png)
+
 To track a new command, you can run:
 ```
 jort track your_command

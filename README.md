@@ -2,7 +2,10 @@
 [![PyPI version](https://badge.fury.io/py/jort.svg)](https://badge.fury.io/py/jort) 
 [![Documentation Status](https://readthedocs.org/projects/jort/badge/?version=latest)](https://jort.readthedocs.io/en/latest/?badge=latest)
 
-Track, profile, and notify at custom checkpoints in your coding scripts. Time new and existing shell commands with a convenient command line tool. Save and view details of finished jobs with a local database.
+* Track, profile, and notify at custom checkpoints in your coding scripts. 
+* Time new and existing shell commands with a convenient command line tool. 
+* Save and view details of finished jobs with a local database.
+![jort help message](jort_help.png)
 
 ## Installation
 ```
@@ -85,8 +88,7 @@ def my_script():
 ```
 
 ## Command Line Timing
-
-![jort help message](jort_help.png)
+![jort track help](jort_track_help.png)
 
 To track a new command, you can run:
 ```

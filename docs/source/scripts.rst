@@ -160,6 +160,27 @@ instantiating a :code:`Tracker`:
         for _ in range(10):
             sleep_1s()
 
+Saving to database 
+------------------
+
+`jort` allows you to save details of finished jobs to a local database. To save all 
+checkpoints to database, use the :code:`to_db` keyword. You can also optionally group jobs 
+under a common "session" by specifying the :code:`session_name` keyword:
+
+.. code-block:: Python
+
+    tr = jort.Tracker(to_db=True, session_name="my_session")
+
+If you do not want every checkpoint to be saved, you can specify manually:
+
+.. code-block:: Python
+
+    tr.stop('my_script', to_db=True)
+
+    @tr.track(to_db=True)
+    def my_script():
+        [...]
+
 Logging
 -------
 

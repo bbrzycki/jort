@@ -19,12 +19,12 @@ class Tracker(object):
 
     Parameters
     ----------
-    logname : str
+    log_name : str
         Filename for timing logs
     verbose : int, optional
         Options for verbosity. 0 for none, 1 for INFO, and 2 for DEBUG.
     to_db : bool, optional
-        Save all checkpoints to database
+        Save all checkpoint runtime details to database
     session_name : str, optional
         Name of job session, if saving jobs to database
 
@@ -32,11 +32,11 @@ class Tracker(object):
     :ivar machine: name of local machine
     :ivar checkpoints: dict of Checkpoints
     :ivar open_checkpoint_payloads: dict of job status payloads for open Checkpoints
-    :ivar logname: log filename
+    :ivar log_name: log filename
     :iver to_db: option to save all checkpoints to database
     :iver session_name: name of job session
     """
-    def __init__(self, logname="tracker.log", verbose=0, to_db=False, session_name=None):
+    def __init__(self, log_name="tracker.log", verbose=0, to_db=False, session_name=None):
         self.date_created = datetime_utils.get_iso_date()
         self.machine = _config.get_config_data().get("machine")
         self.checkpoints = {}
@@ -64,14 +64,14 @@ class Tracker(object):
                     cur.execute(sql, (self.session_id, self.session_name))
                     con.commit()
 
-        self.logname = logname
+        self.log_name = log_name
         if verbose != 0:
             print(f"Starting session `{self.session_name}`")
             # if verbose == 1:
             #     level = logging.INFO
             # else:
             #     level = logging.DEBUG
-            # file_handler = logging.FileHandler(filename=self.logname, mode="w")
+            # file_handler = logging.FileHandler(filename=self.log_name, mode="w")
             # stdout_handler = logging.StreamHandler(sys.stdout)
             # handlers = [file_handler, stdout_handler]
 
@@ -138,6 +138,8 @@ class Tracker(object):
             Checkpoint name
         callbacks : list, optional
             List of optional notification callbacks
+        to_db : bool, optional
+            Save checkpoint runtime details to database
         """
         if name is None:
             name = list(self.open_checkpoint_payloads.keys())[-1]
@@ -221,7 +223,7 @@ class Tracker(object):
         payload["error_message"] = traceback.format_exc().strip().split('\n')[-1]
         raise
 
-    def track(self, f=None, callbacks=[], report=False):
+    def track(self, f=None, callbacks=[], to_db=False, report=False):
         """
         Function wrapper for tracker, to be used as a decorator. Creates a checkpoint
         with the input function's name. 
@@ -236,6 +238,8 @@ class Tracker(object):
             Function to decorate
         callbacks : list, optional
             List of optional notification callbacks
+        to_db : bool, optional
+            Save checkpoint runtime details to database
         report : bool, optional
             Option to print tracker report at function completion
         """
@@ -252,7 +256,7 @@ class Tracker(object):
                     payload["error_message"] = traceback.format_exc().strip().split('\n')[-1]
                     raise
                 finally:
-                    self.stop(name=func.__qualname__, callbacks=callbacks)
+                    self.stop(name=func.__qualname__, callbacks=callbacks, to_db=to_db)
                     if report:
                         self.report()
                 return result
@@ -273,7 +277,7 @@ class Tracker(object):
             print(ckpt.report(dec=dec))
             
             
-def track(f=None, callbacks=[], report=True):
+def track(f=None, callbacks=[], to_db=False, report=True):
     """
     Independent function wrapper, to be used as a decorator, that creates a one-off
     tracker.
@@ -288,7 +292,9 @@ def track(f=None, callbacks=[], report=True):
         Function to decorate
     callbacks : list, optional
         List of optional notification callbacks
+    to_db : bool, optional
+        Save checkpoint runtime details to database
     report : bool, optional
         Option to print tracker report at function completion
     """
-    return Tracker(verbose=0).track(f=f, callbacks=callbacks, report=report)
+    return Tracker(verbose=0).track(f=f, callbacks=callbacks, to_db=to_db, report=report)

@@ -25,6 +25,10 @@ To send notifications on completion via e-mail or SMS, add the :code:`-e` or :co
 flags, respectively. Note that both methods require appropriate login credentials, 
 which can be entered at the command line using :code:`jort config`. 
 
+To save job details to database, add the :code:`-d` flag. You can specify the session name 
+with :code:`-s`, and have `jort` skip jobs that both are already saved in the database under 
+the same session and have completed successfully via the :code:`-u` option.
+
 The :code:`jort` tool spawns a subprocess with your command, so it can capture all 
 stdout/stderr output. You can save this output and send as a :code:`.txt` attachment
 to an e-mail notification by adding the flag :code:`-o` (in addition to the e-mail flag). 
@@ -39,5 +43,5 @@ You can also track an existing process using its integer process ID:
     jort track PID
 
 Similarly, add the :code:`-e` or :code:`-t` flags for either e-mail or SMS notification
-on completion. Note that since :code:`jort` was not the parent process, it can't save 
-output or flag errors. 
+on completion, and :code:`-d` and :code:`-s` flags for saving info to database. Note 
+that since :code:`jort` was not the parent process, it can't save output or flag errors. 

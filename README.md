@@ -57,7 +57,7 @@ jort.TextNotification()
 To use notifications, add callbacks to tracking functions:
 ```
 # linear script
-tr.stop('my_script', callbacks=[jort.PrintReport(), jort.SMSNotification()])
+tr.stop('my_script', callbacks=[jort.PrintReport(), jort.TextNotification()])
 
 # function decorator
 @tr.track(callbacks=[jort.EmailNotification()])
@@ -71,21 +71,21 @@ SMS handling is done through Twilio, which offers a [free trial tier](https://su
 
 ## Command Line Timing
 
-To track a new command, use the `-c` flag:
+To track a new command, you can run:
 ```
-jort -c your_command
+jort track your_command
 ```
-If the target command uses its own flags, place quotes around the full command.
+If the target command uses its own options, place quotes around the full command.
 ```
-jort -c "your_command -a -b -c"
+jort track "your_command -a -b -c"
 ```
-To send notifications on completion via e-mail or SMS, add the `-e` or `-s` flags, respectively. 
+To send notifications on completion via e-mail or text, add the `-e` or `-t` flags, respectively. For a full list of options, use the `-h` flag.
 
-You can also track an existing process using its process ID:
+You can also track an existing process using its integer process ID:
 ```
-jort -p PID
+jort track PID
 ```
-Similarly, add the `-e` or `-s` flags for either e-mail or SMS notification on completion. 
+Similarly, add the `-e` or `-t` flags for either e-mail or SMS notification on completion. 
 
 ## Future Directions
 

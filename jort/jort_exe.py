@@ -18,6 +18,7 @@ class LowerCaseFormatter(click.HelpFormatter):
         super(LowerCaseFormatter, self).write_usage(prog, args, prefix)
 click.Context.formatter_class = LowerCaseFormatter
 
+
 @click.group(context_settings=CONTEXT_SETTINGS,
              options_metavar='[-h] [-V]',
              subcommand_metavar='<command> [<args>]')
@@ -30,7 +31,16 @@ def cli(ctx):
     pass 
 
 
-@cli.command(options_metavar='[-h]')
+class OrderedGroup(click.Group):
+    def __init__(self, name=None, commands=None, **attrs):
+        super(OrderedGroup, self).__init__(name, commands, **attrs)
+        self.commands = commands or {}
+
+    def list_commands(self, ctx):
+        return self.commands
+
+
+@cli.group(options_metavar='[-h]', cls=OrderedGroup)
 def config():
     """
     Configure user details and auth for notifications
@@ -64,6 +74,35 @@ def config():
             config_data[key] = input_config_data[key]
     with open(f"{_config.JORT_DIR}/config", "w") as f:
         json.dump(config_data, f)
+
+
+@config.command(name='all')
+@click.pass_context
+def config_all(ctx):
+    ctx.invoke(config_general)
+    ctx.invoke(config_text)
+    ctx.invoke(config_email)
+    ctx.invoke(config_database)
+
+
+@config.command(name='general')
+def config_general():
+    pass
+
+
+@config.command(name='text')
+def config_text():
+    pass
+
+
+@config.command(name='email')
+def config_email():
+    pass
+
+
+@config.command(name='database')
+def config_database():
+    pass
 
 
 @cli.command(options_metavar='[<options>]')
@@ -122,7 +161,6 @@ def track(job, text, email, database, session, unique, output, shell, verbose):
                             send_text=text,
                             send_email=email,
                             verbose=verbose)
-
 
 
 def main():

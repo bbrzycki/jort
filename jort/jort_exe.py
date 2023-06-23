@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 import os
 import errno
+import socket
 import json
 import getpass
 import argparse
@@ -11,6 +12,7 @@ from . import track_cli
 from ._version import __version__
 
 
+config_data = _config.get_config_data()
 CONTEXT_SETTINGS = dict(help_option_names=['-h', '--help'])
 
 class LowerCaseFormatter(click.HelpFormatter):
@@ -40,69 +42,136 @@ class OrderedGroup(click.Group):
         return self.commands
 
 
-@cli.group(options_metavar='[-h]', cls=OrderedGroup)
+@cli.group(chain=True, 
+           options_metavar='[-h]', 
+           subcommand_metavar='<command> [<args>] [<command2> [<args>]]...',
+           cls=OrderedGroup)
 def config():
     """
     Configure user details and auth for notifications
     """
-    config_data = _config.get_config_data()
-    input_config_data = {
-        "machine": input('What name should this device go by? ({}) '
-                            .format(config_data.get("machine", ""))),
-        "email": input('What email to use? ({}) '
-                        .format(config_data.get("email", ""))),
-        "smtp_server": input('What SMTP server does your email use? ({}) '
-                                .format(config_data.get("smtp_server", ""))),
-        "email_password": getpass.getpass('Email password? ({}) '
-                                            .format(("*"*16 
-                                                    if config_data.get("email_password") is not None 
-                                                    else ""))),
-        "twilio_receive_number": input('What phone number to receive SMS? ({}) '
-                                        .format(config_data.get("twilio_receive_number", ""))),
-        "twilio_send_number": input('What Twilio number to send SMS? ({}) '
-                                    .format(config_data.get("twilio_send_number", ""))),
-        "twilio_account_sid": input('Twilio Account SID? ({}) '
-                                    .format(config_data.get("twilio_account_sid", ""))),
-        "twilio_auth_token": getpass.getpass('Twilio Auth Token? ({}) '
-                                                .format(("*"*16 
-                                                        if config_data.get("twilio_auth_token") is not None 
-                                                        else "")))
-    }
-    # Only save inputs if they aren't empty
-    for key in input_config_data:
-        if input_config_data[key] != "":
-            config_data[key] = input_config_data[key]
-    with open(f"{_config.JORT_DIR}/config", "w") as f:
+    pass
+
+
+@config.command(name='general', options_metavar='[<options>]')
+@click.option("--machine", prompt="Machine name", 
+              default=lambda: config_data.get("machine", socket.gethostname()),
+              show_default=config_data.get("machine", socket.gethostname()))
+@click.option("--data_dir", prompt="Location for storing jort data", 
+              default=lambda: config_data.get("data_dir", os.path.expanduser("~")),
+              show_default=config_data.get("data_dir", os.path.expanduser("~")))
+def config_general(machine, data_dir):
+    """
+    Configure general details
+    """
+    if machine != "":
+        config_data["machine"] = machine
+    if data_dir != "":
+        config_data["data_dir"] = data_dir
+    with open(_config.CONFIG_PATH, "w") as f:
         json.dump(config_data, f)
 
 
-@config.command(name='all')
+@config.command(name='text', options_metavar='[<options>]')
+@click.option("--twilio_receive_number", prompt=True, 
+              default=lambda: config_data.get("twilio_receive_number", ""),
+              show_default=config_data.get("twilio_receive_number"))
+@click.option("--twilio_send_number", prompt=True, 
+              default=lambda: config_data.get("twilio_send_number", ""),
+              show_default=config_data.get("twilio_send_number"))
+@click.option("--twilio_account_sid", prompt=True, 
+              default=lambda: config_data.get("twilio_account_sid", ""),
+              show_default=config_data.get("twilio_account_sid"))
+@click.option("--twilio_auth_token", prompt=True, hide_input=True,
+              default=lambda: "*"*8 if config_data.get("twilio_auth_token") is not None else "",
+              show_default="*"*8 if config_data.get("twilio_auth_token") is not None else None)
+def config_text(twilio_receive_number, twilio_send_number, twilio_account_sid, twilio_auth_token):
+    """
+    Configure SMS text authentication
+    """
+    if twilio_receive_number != "":
+        config_data["twilio_receive_number"] = twilio_receive_number
+    if twilio_send_number != "":
+        config_data["twilio_send_number"] = twilio_send_number
+    if twilio_account_sid != "":
+        config_data["twilio_account_sid"] = twilio_account_sid
+    if twilio_auth_token not in ["", "*"*8]:
+        config_data["twilio_auth_token"] = twilio_auth_token
+    with open(_config.CONFIG_PATH, "w") as f:
+        json.dump(config_data, f)
+
+
+@config.command(name='email', options_metavar='[<options>]')
+@click.option("--email", prompt=True, 
+              default=lambda: config_data.get("email", ""),
+              show_default=config_data.get("email"))
+@click.option("--email_password", prompt=True, hide_input=True,
+              default=lambda: "*"*8 if config_data.get("email_password") is not None else "",
+              show_default="*"*8 if config_data.get("email_password") is not None else None)
+@click.option("--smtp_server", prompt="SMTP server", 
+              default=lambda: config_data.get("smtp_server", ""),
+              show_default=config_data.get("smtp_server"))
+def config_email(email, email_password, smtp_server):
+    """
+    Configure e-mail authentication
+    """
+    if email != "":
+        config_data["email"] = email
+    if email_password not in ["", "*"*8]:
+        config_data["email_password"] = email_password
+    if smtp_server != "":
+        config_data["smtp_server"] = smtp_server
+    with open(_config.CONFIG_PATH, "w") as f:
+        json.dump(config_data, f)
+
+
+@config.command(name='all', options_metavar='[<options>]')
+@click.option("--machine", prompt="Machine name", 
+              default=lambda: config_data.get("machine", socket.gethostname()),
+              show_default=config_data.get("machine", socket.gethostname()))
+@click.option("--data_dir", prompt="Location for storing jort data", 
+              default=lambda: config_data.get("data_dir", os.path.expanduser("~")),
+              show_default=config_data.get("data_dir", os.path.expanduser("~")))
+@click.option("--twilio_receive_number", prompt=True, 
+              default=lambda: config_data.get("twilio_receive_number", ""),
+              show_default=config_data.get("twilio_receive_number"))
+@click.option("--twilio_send_number", prompt=True, 
+              default=lambda: config_data.get("twilio_send_number", ""),
+              show_default=config_data.get("twilio_send_number"))
+@click.option("--twilio_account_sid", prompt=True, 
+              default=lambda: config_data.get("twilio_account_sid", ""),
+              show_default=config_data.get("twilio_account_sid"))
+@click.option("--twilio_auth_token", prompt=True, hide_input=True,
+              default=lambda: "*"*8 if config_data.get("twilio_auth_token") is not None else "",
+              show_default="*"*8 if config_data.get("twilio_auth_token") is not None else None)
+@click.option("--email", prompt=True, 
+              default=lambda: config_data.get("email", ""),
+              show_default=config_data.get("email"))
+@click.option("--email_password", prompt=True, hide_input=True,
+              default=lambda: "*"*8 if config_data.get("email_password") is not None else "",
+              show_default="*"*8 if config_data.get("email_password") is not None else None)
+@click.option("--smtp_server", prompt="SMTP server", 
+              default=lambda: config_data.get("smtp_server", ""),
+              show_default=config_data.get("smtp_server"))
 @click.pass_context
-def config_all(ctx):
-    ctx.invoke(config_general)
-    ctx.invoke(config_text)
-    ctx.invoke(config_email)
-    ctx.invoke(config_database)
-
-
-@config.command(name='general')
-def config_general():
-    pass
-
-
-@config.command(name='text')
-def config_text():
-    pass
-
-
-@config.command(name='email')
-def config_email():
-    pass
-
-
-@config.command(name='database')
-def config_database():
-    pass
+def config_all(ctx, machine, data_dir, 
+               twilio_receive_number, twilio_send_number, twilio_account_sid, twilio_auth_token, 
+               email, email_password, smtp_server):
+    """
+    Go through full configuration menu
+    """
+    ctx.invoke(config_general, 
+               machine=machine, 
+               data_dir=data_dir)
+    ctx.invoke(config_text, 
+               twilio_receive_number=twilio_receive_number, 
+               twilio_send_number=twilio_send_number, 
+               twilio_account_sid=twilio_account_sid, 
+               twilio_auth_token=twilio_auth_token)
+    ctx.invoke(config_email, 
+               email=email, 
+               email_password=email_password, 
+               smtp_server=smtp_server)
 
 
 @cli.command(options_metavar='[<options>]')
@@ -270,7 +339,7 @@ def main():
         for key in input_config_data:
             if input_config_data[key] != "":
                 config_data[key] = input_config_data[key]
-        with open(f"{_config.JORT_DIR}/config", "w") as f:
+        with open(_config.CONFIG_PATH, "w") as f:
             json.dump(config_data, f)            
     if args.command and args.pid:
         parser.error('Please specify only one command or process to track.')

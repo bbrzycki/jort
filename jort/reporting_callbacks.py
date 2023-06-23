@@ -74,7 +74,7 @@ class PrintReport(Callback):
 class EmailNotification(Callback):
     """
     Send email notifications to and from your email account. Requires login 
-    credentials, which can be entered at the command line via :code:`jort -i`.
+    credentials, which can be entered at the command line via :code:`jort config`.
     """
     def __init__(self, email=None):
         config_data = _config.get_config_data()
@@ -85,9 +85,9 @@ class EmailNotification(Callback):
             self.email = email
 
         if self.email_password is None:
-            raise exceptions.JortCredentialException("Missing email password, add with `jort -i` command")
+            raise exceptions.JortCredentialException("Missing email password, add with `jort config` command")
         if self.smtp_server is None:
-            raise exceptions.JortException("Missing SMTP server, add with `jort -i` command")
+            raise exceptions.JortException("Missing SMTP server, add with `jort config` command")
         if self.email is None:
             raise exceptions.JortException("Missing email")
 
@@ -195,7 +195,7 @@ class EmailNotification(Callback):
 class TextNotification(Callback):
     """
     Send SMS notifications to and from numbers managed by your Twilio account. Requires 
-    Twilio credentials, which can be entered at the command line via :code:`jort -i`.
+    Twilio credentials, which can be entered at the command line via :code:`jort config`.
     """
     def __init__(self, receive_number=None):
         config_data = _config.get_config_data()
@@ -207,9 +207,9 @@ class TextNotification(Callback):
             self.receive_number = receive_number
 
         if self.twilio_account_sid is None or self.twilio_auth_token is None:
-            raise exceptions.JortCredentialException("Missing Twilio credentials, add with `jort -i` command")
+            raise exceptions.JortCredentialException("Missing Twilio credentials, add with `jort config` command")
         if self.send_number is None:
-            raise exceptions.JortException("Missing Twilio sending number, add with `jort -i` command")
+            raise exceptions.JortException("Missing Twilio sending number, add with `jort config` command")
         if self.receive_number is None:
             raise exceptions.JortException("Missing receiving number")
 

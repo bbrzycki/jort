@@ -1,3 +1,4 @@
+import os
 import sys
 import time
 import sqlite3
@@ -7,9 +8,10 @@ import functools
 import shortuuid
 import contextlib
 
-from . import _config
+from . import config
 from . import checkpoint
 from . import datetime_utils
+from . import exceptions
         
 
 class Tracker(object):
@@ -38,31 +40,17 @@ class Tracker(object):
     """
     def __init__(self, log_name="tracker.log", verbose=0, to_db=False, session_name=None):
         self.date_created = datetime_utils.get_iso_date()
-        self.machine = _config.get_config_data().get("machine")
+        self.machine = config._get_config_data().get("machine")
         self.checkpoints = {}
         self.open_checkpoint_payloads = {}
 
         # Manage session name, id; if session name is provided, get the id from db
-        self.to_db = to_db
         self.session_name = session_name
         self.session_id = shortuuid.uuid()
-
-        with contextlib.closing(sqlite3.connect(f"{_config.JORT_DIR}/jort.db")) as con:
-            cur = con.cursor()
-            if self.session_name is not None:
-                sql = "SELECT session_id FROM sessions WHERE session_name == ?"
-                res = cur.execute(sql, (self.session_name,))
-                row = res.fetchone()
-                if row is not None:
-                    self.session_id = row[0]
-            else:
-                self.session_name = self.session_id
-                if self.to_db:
-                    sql = (
-                        "INSERT INTO sessions VALUES(?, ?)"
-                    )
-                    cur.execute(sql, (self.session_id, self.session_name))
-                    con.commit()
+        self.session_configured = False
+        self.to_db = to_db
+        if self.to_db:
+            self._configure_db_session()
 
         self.log_name = log_name
         if verbose != 0:
@@ -80,6 +68,31 @@ class Tracker(object):
             #                     handlers=handlers, 
             #                     force=True)
         
+    def _configure_db_session(self):
+        """
+        Manage session name and id. If session name is provided, get the id from database.
+        """
+        try:
+            with contextlib.closing(sqlite3.connect(config._get_database_path())) as con:
+                cur = con.cursor()
+                if self.session_name is not None:
+                    sql = "SELECT session_id FROM sessions WHERE session_name = ?"
+                    res = cur.execute(sql, (self.session_name,))
+                    row = res.fetchone()
+                    if row is not None:
+                        self.session_id = row[0]
+                else:
+                    self.session_name = self.session_id
+                    sql = (
+                        "INSERT INTO sessions VALUES(?, ?)"
+                    )
+                    cur.execute(sql, (self.session_id, self.session_name))
+                    con.commit()
+            self.session_configured = True
+        except sqlite3.OperationalError as e:
+            raise exceptions.JortException("Missing database - make sure to initialize with `jort.init()` or `jort init`") from e
+
+
     def start(self, name=None, date_created=None):
         """
         Open checkpoint and start timer. Creates initial job status payload for use
@@ -159,31 +172,36 @@ class Tracker(object):
         logger.info(f"Elapsed time: {formatted_runtime}")
 
         if self.to_db or to_db:
-            with contextlib.closing(sqlite3.connect(f"{_config.JORT_DIR}/jort.db")) as con:
-                cur = con.cursor()
-                # Make sure session info is included in db
-                sql = (
-                    "INSERT OR IGNORE INTO sessions VALUES(?, ?)"
-                )
-                cur.execute(sql, (self.session_id, self.session_name))
-                # Insert job into db
-                sql = (
-                    "INSERT INTO jobs VALUES("
-                    "    :job_id,"
-                    "    :session_id,"
-                    "    :name,"
-                    "    :status,"
-                    "    :machine,"
-                    "    :date_created,"
-                    "    :date_modified,"
-                    "    :runtime,"
-                    "    :stdout_fn,"
-                    "    :error_message"
-                    ")"
-                )
-                cur.execute(sql, payload)
-                job_id = cur.lastrowid
-                con.commit()
+            if not self.session_configured:
+                self._configure_db_session()
+            try:
+                with contextlib.closing(sqlite3.connect(config._get_database_path())) as con:
+                    cur = con.cursor()
+                    # Make sure session info is included in db
+                    sql = (
+                        "INSERT OR IGNORE INTO sessions VALUES(?, ?)"
+                    )
+                    cur.execute(sql, (self.session_id, self.session_name))
+                    # Insert job into db
+                    sql = (
+                        "INSERT INTO jobs VALUES("
+                        "    :job_id,"
+                        "    :session_id,"
+                        "    :name,"
+                        "    :status,"
+                        "    :machine,"
+                        "    :date_created,"
+                        "    :date_modified,"
+                        "    :runtime,"
+                        "    :stdout_fn,"
+                        "    :error_message"
+                        ")"
+                    )
+                    cur.execute(sql, payload)
+                    job_id = cur.lastrowid
+                    con.commit()
+            except sqlite3.OperationalError as e:
+                raise exceptions.JortException("Missing database - make sure to initialize with `jort.init()` or `jort init`") from e
 
         for callback in callbacks:
             callback.execute(payload=payload)

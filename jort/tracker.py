@@ -7,6 +7,7 @@ import traceback
 import functools
 import shortuuid
 import contextlib
+import socket
 
 from . import config
 from . import checkpoint
@@ -40,7 +41,7 @@ class Tracker(object):
     """
     def __init__(self, log_name="tracker.log", verbose=0, to_db=False, session_name=None):
         self.date_created = datetime_utils.get_iso_date()
-        self.machine = config._get_config_data().get("machine")
+        self.machine = socket.gethostname() #config._get_config_data().get("machine")
         self.checkpoints = {}
         self.open_checkpoint_payloads = {}
 

@@ -31,7 +31,7 @@ def print_jobs(session=None, tail=None, full_details=False):
 
             df = pd.read_sql(sql, con)
             if session is not None and len(df) == 0:
-                raise ValueError(f"No jobs found with session '{session}'")
+                raise ValueError(f"No jobs found with session `{session}`")
             if tail is not None:
                 df = df.tail(tail)
             return df

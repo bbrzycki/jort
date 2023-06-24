@@ -38,3 +38,16 @@ def print_jobs(session=None, tail=None, full_details=False):
     except sqlite3.OperationalError as e:
         raise exceptions.JortException("Missing database - make sure to initialize with `jort.init()` or `jort init`") from e
     
+
+@click.command(options_metavar='[<options>]')
+@click.option('-s', '--session', type=str,
+              help='filter by session name')
+@click.option('-r', '--rows', type=int,
+              help='number of rows to print')
+@click.option('-f', '--full-details', is_flag=True,
+              help='show all details, including ids')
+def inspect(session, rows, full_details):
+    """
+    Get saved job details from database
+    """
+    print(print_jobs(session=session, tail=rows, full_details=full_details))

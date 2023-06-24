@@ -34,6 +34,7 @@ def init_internal_config():
 
 def init_database():
     if not _check_data_dir_nfs():
+        Path(_get_data_dir()).mkdir(mode=0o700, parents=True, exist_ok=True)
         _initialize_db()
     else:
         click.echo("Database not initialized; path is NFS mounted - use `jort.config_general()` or `jort config general` to change location")

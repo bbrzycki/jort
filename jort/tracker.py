@@ -1,5 +1,6 @@
 import os
 import sys
+import linecache
 import time
 import sqlite3
 import logging
@@ -294,6 +295,48 @@ class Tracker(object):
         for name in self.checkpoints:
             ckpt = self.checkpoints[name]
             print(ckpt.report(dec=dec))
+
+
+    def line_monitor(self):
+        self.first_monitor_pass = True
+        class SetTrace(object):
+            def __init__(self_, func):
+                self_.func = func
+
+            def __enter__(self_):
+                sys.setprofile(self_.func)
+                return self_
+
+            def __exit__(self_, ext_type, exc_value, traceback):
+                try:
+                    self.stop()
+                except IndexError:
+                    pass
+                sys.setprofile(None)
+
+        def monitor(frame, event, arg):
+            if event == "call":
+                if not self.first_monitor_pass:
+                    try:
+                        self.stop()
+                    except IndexError:
+                        pass
+                else:
+                    self.first_monitor_pass = False
+                lineno = frame.f_lineno
+                filename = frame.f_globals["__file__"]
+                if (filename.endswith(".pyc") or
+                    filename.endswith(".pyo")):
+                    filename = filename[:-1]
+                name = frame.f_globals["__name__"]
+                line = linecache.getline(filename, lineno)
+                if 'import' in line:
+                    self.start(line.strip())
+                print("%s:%s: %s" % (name, lineno, line.rstrip()))
+            return monitor
+        return SetTrace(monitor)
+
+    
             
             
 def track(f=None, callbacks=[], to_db=False, report=True):

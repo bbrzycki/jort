@@ -9,12 +9,18 @@ import functools
 import shortuuid
 import contextlib
 import socket
+import inspect
 
 from . import config
 from . import block
 from . import datetime_utils
 from . import exceptions
         
+
+def _get_linenumber():
+        call_frame = inspect.getframeinfo(inspect.stack()[2][0])
+        return call_frame.lineno
+
 
 class Tracker(object):
     """
@@ -94,8 +100,22 @@ class Tracker(object):
         except sqlite3.OperationalError as e:
             raise exceptions.JortException("Missing database - make sure to initialize with `jort.init()` or `jort init`") from e
 
+    def checkpoint(self, name=None, callbacks=[], to_db=False):
+        """
+        A checkpoint opens a timing block that closes at the next checkpoint.
+        Note that the last checkpoint needs to be closed with stop().
+        """
+        # First close any existing checkpoints
+        for ckpt_name, payload in self.open_block_payloads.copy().items():
+            if payload["is_checkpoint"]:
+                self.stop(name=ckpt_name, callbacks=callbacks, to_db=to_db)
+        
+        if name is None:
+            name = f"Checkpoint - line {_get_linenumber()}"
+        
+        self.start(name=name, is_checkpoint=True)
 
-    def start(self, name=None, date_created=None):
+    def start(self, name=None, date_created=None, is_checkpoint=False):
         """
         Open block and start timer. Creates initial job status payload for use
         with notifications.
@@ -106,6 +126,8 @@ class Tracker(object):
             Block name
         date_created : str, optional
             For an existing process, instead set this input as the creation date
+        is_checkpoint : bool, optional
+            Whether block start is a checkpoint (stops at next checkpoint)
         """
         if name is None:
             name = "Misc"
@@ -133,6 +155,7 @@ class Tracker(object):
             "stdout_fn": None,
             "unread": True,
             "error_message": None,
+            "is_checkpoint": is_checkpoint,
         }
         if name not in self.blocks:
             self.blocks[name] = block.Block(name)
@@ -293,8 +316,8 @@ class Tracker(object):
             Decimal precision
         """
         for name in self.blocks:
-            ckpt = self.blocks[name]
-            print(ckpt.report(dec=dec))
+            block = self.blocks[name]
+            print(block.report(dec=dec))
 
 
     def exec(self, code_string):
@@ -326,7 +349,7 @@ class Tracker(object):
                 sys.setprofile(None)
 
         def monitor(frame, event, arg):
-            if event == "call":
+            if event == "line":
                 if not self.first_monitor_pass:
                     try:
                         self.stop()

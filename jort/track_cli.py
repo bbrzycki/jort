@@ -44,7 +44,7 @@ def track_new(command,
     save_filename : str, optional
         Filename to which to save command output
     to_db : bool, optional
-        Save all checkpoints to database
+        Save all blocks to database
     session_name : str, optional
         Name of job session, if saving jobs to database
     unique : bool, optional
@@ -92,7 +92,7 @@ def track_new(command,
 
     tr.start(name=command)
 
-    payload = tr.open_checkpoint_payloads[command]
+    payload = tr.open_block_payloads[command]
 
     payload['stdout_fn'] = stdout_fn
 
@@ -191,7 +191,7 @@ def track_existing(pid,
     pid : int
         Process ID of existing process
     to_db : bool, optional
-        Save all checkpoints to database
+        Save all blocks to database
     session_name : str, optional
         Name of job session, if saving jobs to database
     send_text : bool, optional
@@ -219,7 +219,7 @@ def track_existing(pid,
 
     tr = tracker.Tracker(to_db=to_db, session_name=session_name)
     tr.start(name=command, date_created=datetime_utils.get_iso_date(p.create_time()))
-    payload = tr.open_checkpoint_payloads[command]
+    payload = tr.open_block_payloads[command]
 
     if verbose:
         pprint(payload)

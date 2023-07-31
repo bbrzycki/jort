@@ -11,7 +11,7 @@ import contextlib
 import socket
 
 from . import config
-from . import checkpoint
+from . import block
 from . import datetime_utils
 from . import exceptions
         
@@ -19,7 +19,7 @@ from . import exceptions
 class Tracker(object):
     """
     A class to time sections of Python scripts by creating and closing timing
-    checkpoints. 
+    blocks. 
 
     Parameters
     ----------
@@ -28,23 +28,23 @@ class Tracker(object):
     verbose : int, optional
         Options for verbosity. 0 for none, 1 for INFO, and 2 for DEBUG.
     to_db : bool, optional
-        Save all checkpoint runtime details to database
+        Save all block runtime details to database
     session_name : str, optional
         Name of job session, if saving jobs to database
 
     :ivar date_created: time of initialization
     :ivar machine: name of local machine
-    :ivar checkpoints: dict of Checkpoints
-    :ivar open_checkpoint_payloads: dict of job status payloads for open Checkpoints
+    :ivar blocks: dict of Blocks
+    :ivar open_block_payloads: dict of job status payloads for open Blocks
     :ivar log_name: log filename
-    :iver to_db: option to save all checkpoints to database
+    :iver to_db: option to save all blocks to database
     :iver session_name: name of job session
     """
     def __init__(self, log_name="tracker.log", verbose=0, to_db=False, session_name=None):
         self.date_created = datetime_utils.get_iso_date()
         self.machine = socket.gethostname() #config._get_config_data().get("machine")
-        self.checkpoints = {}
-        self.open_checkpoint_payloads = {}
+        self.blocks = {}
+        self.open_block_payloads = {}
 
         # Manage session name, id; if session name is provided, get the id from db
         self.session_name = session_name
@@ -97,21 +97,21 @@ class Tracker(object):
 
     def start(self, name=None, date_created=None):
         """
-        Open checkpoint and start timer. Creates initial job status payload for use
+        Open block and start timer. Creates initial job status payload for use
         with notifications.
 
         Parameters
         ----------
         name : str
-            Checkpoint name
+            Block name
         date_created : str, optional
             For an existing process, instead set this input as the creation date
         """
         if name is None:
             name = "Misc"
         name = str(name)
-        if name in self.open_checkpoint_payloads:
-            raise RuntimeError(f"Open checkpoint named {name} already exists")
+        if name in self.open_block_payloads:
+            raise RuntimeError(f"Open block named {name} already exists")
         
         if date_created is not None:
             start = date_created
@@ -119,7 +119,7 @@ class Tracker(object):
             start = datetime_utils.get_iso_date()
         now = datetime_utils.get_iso_date()
 
-        self.open_checkpoint_payloads[name] = {
+        self.open_block_payloads[name] = {
             "user_id": None,
             "job_id": shortuuid.uuid(),
             "session_id": self.session_id,
@@ -134,43 +134,43 @@ class Tracker(object):
             "unread": True,
             "error_message": None,
         }
-        if name not in self.checkpoints:
-            self.checkpoints[name] = checkpoint.Checkpoint(name)
+        if name not in self.blocks:
+            self.blocks[name] = block.Block(name)
         logger = logging.getLogger(f"{name}.start")
         logger.debug("Profiling block started.")
         
     def stop(self, name=None, callbacks=[], to_db=False):
         """
-        Close checkpoint and stop timer. Store start, stop, and elapsed times.
+        Close block and stop timer. Store start, stop, and elapsed times.
         Process job status payload and execute notification callbacks.
 
-        If checkpoint name isn't supplied, get the most recent checkpoint (last
+        If block name isn't supplied, get the most recent block (last
         in, first out; LIFO).
 
         Parameters
         ----------
         name : str, optional
-            Checkpoint name
+            Block name
         callbacks : list, optional
             List of optional notification callbacks
         to_db : bool, optional
-            Save checkpoint runtime details to database
+            Save block runtime details to database
         """
         if name is None:
-            name = list(self.open_checkpoint_payloads.keys())[-1]
-        elif name not in self.open_checkpoint_payloads:
-            raise KeyError(f"No open checkpoint named {name}")
+            name = list(self.open_block_payloads.keys())[-1]
+        elif name not in self.open_block_payloads:
+            raise KeyError(f"No open block named {name}")
 
-        payload = self.open_checkpoint_payloads.pop(name)
+        payload = self.open_block_payloads.pop(name)
         if payload["status"] == "running":
             payload["status"] = "success"
         start = payload["date_created"]
         stop = datetime_utils._update_payload_times(payload)
-        self.checkpoints[name].add_times(start, stop)
+        self.blocks[name].add_times(start, stop)
 
         logger = logging.getLogger(f"{name}.stop")
         logger.debug("Profiling block stopped.")
-        formatted_runtime = checkpoint.format_reported_times(self.checkpoints[name].elapsed[-1])
+        formatted_runtime = block.format_reported_times(self.blocks[name].elapsed[-1])
         logger.info(f"Elapsed time: {formatted_runtime}")
 
         if self.to_db or to_db:
@@ -210,45 +210,45 @@ class Tracker(object):
         
     def remove(self, name=None):
         """
-        Option to remove checkpoint start instead of completing a profiling
+        Option to remove block start instead of completing a profiling
         set, such as on catching an error.
 
         Parameters
         ----------
         name : str, optional
-            Checkpoint name
+            Block name
         """
         if name is None:
-            name = list(self.open_checkpoint_payloads.keys())[-1]
+            name = list(self.open_block_payloads.keys())[-1]
         
-        if name in self.open_checkpoint_payloads:
-            payload = self.open_checkpoint_payloads.pop(name)
+        if name in self.open_block_payloads:
+            payload = self.open_block_payloads.pop(name)
             logger = logging.getLogger(f"{name}.remove")
             logger.debug("Profiling block removed.")
         
     def clear_open(self):
         """
-        Clear all open checkpoints / open job status payloads.
+        Clear all open blocks / open job status payloads.
         """
-        self.open_checkpoint_payloads = {}
+        self.open_block_payloads = {}
 
     def raise_error(self):
         """
-        Update information payload with error details for the outermost checkpoint,
+        Update information payload with error details for the outermost block,
         to only be used within the except block during exception handling.
         """
-        name = list(self.open_checkpoint_payloads.keys())[0]
-        payload = self.open_checkpoint_payloads[name]
+        name = list(self.open_block_payloads.keys())[0]
+        payload = self.open_block_payloads[name]
         payload["status"] = "error"
         payload["error_message"] = traceback.format_exc().strip().split('\n')[-1]
         raise
 
     def track(self, f=None, callbacks=[], to_db=False, report=False):
         """
-        Function wrapper for tracker, to be used as a decorator. Creates a checkpoint
+        Function wrapper for tracker, to be used as a decorator. Creates a block
         with the input function's name. 
 
-        Without parameters / evaluation, the decorator simply creates the checkpoint 
+        Without parameters / evaluation, the decorator simply creates the block 
         and times the input function. With parameters, this method can execute 
         callbacks and print a report. 
 
@@ -259,7 +259,7 @@ class Tracker(object):
         callbacks : list, optional
             List of optional notification callbacks
         to_db : bool, optional
-            Save checkpoint runtime details to database
+            Save block runtime details to database
         report : bool, optional
             Option to print tracker report at function completion
         """
@@ -271,7 +271,7 @@ class Tracker(object):
                 try:
                     result = func(*args, **kwargs)
                 except Exception as e:
-                    payload = self.open_checkpoint_payloads[func.__qualname__]
+                    payload = self.open_block_payloads[func.__qualname__]
                     payload["status"] = "error"
                     payload["error_message"] = traceback.format_exc().strip().split('\n')[-1]
                     raise
@@ -285,19 +285,30 @@ class Tracker(object):
         
     def report(self, dec=1):
         """
-        Print formatted runtime statistics for all checkpoints.
+        Print formatted runtime statistics for all blocks.
 
         Parameters
         ----------
         dec : int
             Decimal precision
         """
-        for name in self.checkpoints:
-            ckpt = self.checkpoints[name]
+        for name in self.blocks:
+            ckpt = self.blocks[name]
             print(ckpt.report(dec=dec))
 
 
-    def line_monitor(self):
+    def exec(self, code_string):
+        """
+        Code string can be a series of statements, separated by newlines.
+        """
+        lines = [line.strip() for line in code_string.strip().split('\n')]
+        for line in lines:
+            self.start(name=line)
+            exec(line)
+            self.stop()
+
+
+    def auto_line_monitor(self):
         self.first_monitor_pass = True
         class SetTrace(object):
             def __init__(self_, func):
@@ -355,7 +366,7 @@ def track(f=None, callbacks=[], to_db=False, report=True):
     callbacks : list, optional
         List of optional notification callbacks
     to_db : bool, optional
-        Save checkpoint runtime details to database
+        Save block runtime details to database
     report : bool, optional
         Option to print tracker report at function completion
     """

@@ -29,14 +29,14 @@ class Tracker(object):
 
     Parameters
     ----------
+    session_name : str, optional
+        Name of job session, if saving jobs to database
     log_name : str
         Filename for timing logs
     verbose : int, optional
         Options for verbosity. 0 for none, 1 for INFO, and 2 for DEBUG.
     to_db : bool, optional
         Save all block runtime details to database
-    session_name : str, optional
-        Name of job session, if saving jobs to database
 
     :ivar date_created: time of initialization
     :ivar machine: name of local machine
@@ -46,7 +46,7 @@ class Tracker(object):
     :iver to_db: option to save all blocks to database
     :iver session_name: name of job session
     """
-    def __init__(self, log_name="tracker.log", verbose=0, to_db=False, session_name=None):
+    def __init__(self, session_name=None, log_name="tracker.log", verbose=0, to_db=False):
         self.date_created = datetime_utils.get_iso_date()
         self.machine = socket.gethostname() #config._get_config_data().get("machine")
         self.blocks = {}
@@ -315,10 +315,12 @@ class Tracker(object):
         dec : int
             Decimal precision
         """
+        print()
+        print(f"Session: {self.session_name}")
         for name in self.blocks:
             block = self.blocks[name]
             print(block.report(dec=dec))
-
+        print()
 
     def exec(self, code_string):
         """

@@ -68,7 +68,7 @@ def track_new(command,
     # Key for storing stdout text to file
     if save_filename or store_stdout:
         stdout_fn = f"{shortuuid.uuid()}.txt"
-        stdout_path =  os.path.join(config._get_data_dir(), stdout_fn)
+        stdout_path = os.path.join(config._get_data_dir(), stdout_fn)
     else:
         stdout_fn = None
 

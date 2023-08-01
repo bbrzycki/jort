@@ -171,7 +171,7 @@ class EmailNotification(Callback):
         message.attach(MIMEText(email_data["html_body"], "html"))
 
         if payload["stdout_fn"] is not None:
-            stdout_path = f'{config.JORT_DIR}/{payload["stdout_fn"]}'
+            stdout_path = os.path.join(config._get_data_dir(), payload["stdout_fn"])
             with open(stdout_path, "r") as f:
                 attachment = MIMEApplication(f.read(), _subtype="txt")
             attachment.add_header("Content-Disposition", "attachment", filename="output.txt")

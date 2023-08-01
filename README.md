@@ -2,7 +2,7 @@
 [![PyPI version](https://badge.fury.io/py/jort.svg)](https://badge.fury.io/py/jort) 
 [![Documentation Status](https://readthedocs.org/projects/jort/badge/?version=latest)](https://jort.readthedocs.io/en/latest/?badge=latest)
 
-* Track, profile, and notify at custom checkpoints in your coding scripts. 
+* Track, profile, and notify at custom blocks in your coding scripts. 
 * Time new and existing shell commands with a convenient command line tool. 
 * Save and view details of finished jobs with a local database.
 ![jort help message](jort_help.png)
@@ -13,9 +13,9 @@ pip install jort
 ```
 
 ## Script Timing
-Use the `Tracker` to create named checkpoints throughout your code. Checkpoints need `start` and `stop` calls, and 
+Use the `Tracker` to create named blocks throughout your code. Blocks need `start` and `stop` calls, and 
 multiple iterations are combined to summarize how long it takes to complete each leg. The `report` function
-prints the results from all checkpoints. If `stop` is not supplied a checkpoint name, the tracker will close and calculate elapsed time from the last open checkpoint (i.e. last in, first out).
+prints the results from all blocks. If `stop` is not supplied a block name, the tracker will close and calculate elapsed time from the last open block (i.e. last in, first out).
 ```
 import jort
 from time import sleep
@@ -38,6 +38,8 @@ The printed report appears as:
 my_script | 11.0 s ± 0.0 s per iteration, n = 1
 sleep_1s | 1.0 s ± 0.0 s per iteration, n = 10
 ```
+
+Alternatively, you can use single line checkpoints with `tr.checkpoint()`, which create timing blocks that close at the start of the next checkpoint. Note that you must use another `tr.stop()` call to end the final checkpoint block.
 
 ### Function Decorators
 `jort` supports timing functions with decorators, via `Tracker.track`. As in the first example:
@@ -74,11 +76,11 @@ SMS handling is done through Twilio, which offers a [free trial tier](https://su
 
 ## Saving to Database
 
-`jort` allows you to save details of finished jobs to a local database. To save all checkpoints to database, use the `to_db` keyword. You can also optionally group jobs under a common "session" by specifying the `session_name` keyword:
+`jort` allows you to save details of finished jobs to a local database. To save all blocks to database, use the `to_db` keyword. You can also optionally group jobs under a common "session" by specifying the `session_name` keyword:
 ```
 tr = jort.Tracker(to_db=True, session_name="my_session")
 ```
-If you do not want every checkpoint to be saved, you can specify manually:
+If you do not want every block to be saved, you can specify manually:
 ```
 tr.stop('my_script', to_db=True)
 

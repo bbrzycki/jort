@@ -5,11 +5,11 @@ Basic usage
 -----------
 
 The main tracking functionality uses the :code:`Tracker` object, which is used to
-create named checkpoints throughout your code. Checkpoints need :code:`start` and 
+create named blocks throughout your code. Blocks need :code:`start` and 
 :code:`stop` calls, and multiple iterations are combined to summarize how long it takes 
-to complete each leg. The :code:`report` function prints the results from all checkpoints. 
-If :code:`stop` is not supplied a checkpoint name, the tracker will close and calculate 
-elapsed time from the last open checkpoint (i.e. last in, first out).
+to complete each leg. The :code:`report` function prints the results from all blocks. 
+If :code:`stop` is not supplied a block name, the tracker will close and calculate 
+elapsed time from the last open block (i.e. last in, first out).
 
 As an example of the basic usage:
 
@@ -37,6 +37,10 @@ The printed report appears as:
     my_script | 11.0 s ± 0.0 s per iteration, n = 1
     sleep_1s | 1.0 s ± 0.0 s per iteration, n = 10
 
+Alternatively, you can use single line checkpoints with :code:`tr.checkpoint()`, which create 
+timing blocks that close at the start of the next checkpoint. Note that you must use another 
+:code:`tr.stop()` call to end the final checkpoint block.
+
 
 Notifications
 -------------
@@ -50,7 +54,7 @@ main callbacks:
     jort.EmailNotification()
     jort.TextNotification()
 
-Notifications are executed at the end of checkpoints using the function
+Notifications are executed at the end of blocks using the function
 :code:`Tracker.stop` with argument :code:`callbacks`, which accepts a list of 
 callbacks. Note: notification callbacks are not intended to be called frequently.
 
@@ -164,14 +168,14 @@ Saving to database
 ------------------
 
 `jort` allows you to save details of finished jobs to a local database. To save all 
-checkpoints to database, use the :code:`to_db` keyword. You can also optionally group jobs 
+blocks to database, use the :code:`to_db` keyword. You can also optionally group jobs 
 under a common "session" by specifying the :code:`session_name` keyword:
 
 .. code-block:: Python
 
     tr = jort.Tracker(to_db=True, session_name="my_session")
 
-If you do not want every checkpoint to be saved, you can specify manually:
+If you do not want every block to be saved, you can specify manually:
 
 .. code-block:: Python
 

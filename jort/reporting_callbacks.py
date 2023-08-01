@@ -11,7 +11,7 @@ from email.mime.multipart import MIMEMultipart
 from email.mime.application import MIMEApplication
 import twilio.rest
 import humanfriendly
-from . import _config
+from . import config
 from . import exceptions
 
 
@@ -74,20 +74,20 @@ class PrintReport(Callback):
 class EmailNotification(Callback):
     """
     Send email notifications to and from your email account. Requires login 
-    credentials, which can be entered at the command line via :code:`jort -i`.
+    credentials, which can be entered at the command line via :code:`jort config`.
     """
     def __init__(self, email=None):
-        config_data = _config.get_config_data()
+        config_data = config._get_config_data()
         self.email = config_data.get("email")
-        self.smtp_server = config_data.get("smtp_server")
-        self.email_password = config_data.get("email_password")
         if email is not None:
             self.email = email
+        self.email_password = config_data.get("email_password")
+        self.smtp_server = config_data.get("smtp_server")
 
         if self.email_password is None:
-            raise exceptions.JortCredentialException("Missing email password, add with `jort -i` command")
+            raise exceptions.JortCredentialException("Missing email password, add with `jort config email` command")
         if self.smtp_server is None:
-            raise exceptions.JortException("Missing SMTP server, add with `jort -i` command")
+            raise exceptions.JortException("Missing SMTP server, add with `jort config email` command")
         if self.email is None:
             raise exceptions.JortException("Missing email")
 
@@ -171,7 +171,7 @@ class EmailNotification(Callback):
         message.attach(MIMEText(email_data["html_body"], "html"))
 
         if payload["stdout_fn"] is not None:
-            stdout_path = f'{_config.JORT_DIR}/{payload["stdout_fn"]}'
+            stdout_path = f'{config.JORT_DIR}/{payload["stdout_fn"]}'
             with open(stdout_path, "r") as f:
                 attachment = MIMEApplication(f.read(), _subtype="txt")
             attachment.add_header("Content-Disposition", "attachment", filename="output.txt")
@@ -195,21 +195,21 @@ class EmailNotification(Callback):
 class TextNotification(Callback):
     """
     Send SMS notifications to and from numbers managed by your Twilio account. Requires 
-    Twilio credentials, which can be entered at the command line via :code:`jort -i`.
+    Twilio credentials, which can be entered at the command line via :code:`jort config`.
     """
     def __init__(self, receive_number=None):
-        config_data = _config.get_config_data()
+        config_data = config._get_config_data()
         self.receive_number = config_data.get("twilio_receive_number")
+        if receive_number is not None:
+            self.receive_number = receive_number
         self.send_number = config_data.get("twilio_send_number")
         self.twilio_account_sid = config_data.get("twilio_account_sid")
         self.twilio_auth_token = config_data.get("twilio_auth_token")
-        if receive_number is not None:
-            self.receive_number = receive_number
 
         if self.twilio_account_sid is None or self.twilio_auth_token is None:
-            raise exceptions.JortCredentialException("Missing Twilio credentials, add with `jort -i` command")
+            raise exceptions.JortCredentialException("Missing Twilio credentials, add with `jort config text` command")
         if self.send_number is None:
-            raise exceptions.JortException("Missing Twilio sending number, add with `jort -i` command")
+            raise exceptions.JortException("Missing Twilio sending number, add with `jort config text` command")
         if self.receive_number is None:
             raise exceptions.JortException("Missing receiving number")
 

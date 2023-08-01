@@ -2,18 +2,18 @@ import numpy as np
 from . import datetime_utils
 
 
-class Checkpoint(object):
+class Block(object):
     """
-    Checkpoint object to mark start, stop, and elapsed times.
+    Block object to mark start, stop, and elapsed times.
 
     Start and stop times are in ISO format, while elapsed times are in seconds.
 
     Parameters
     ----------
     name : string
-        Checkpoint name
+        Block name
 
-    :ivar name: checkpoint name
+    :ivar name: block name
     :ivar starts: list of start times
     :ivar stops: list of stop times
     :ivar elapsed: list of elapsed times
@@ -30,7 +30,7 @@ class Checkpoint(object):
         
     def add_times(self, start, stop):
         """
-        Store start, stop, and elpased times to checkpoint.
+        Store start, stop, and elpased times to block.
 
         Parameters
         ----------

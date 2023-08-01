@@ -6,6 +6,7 @@ import contextlib
 import shlex
 import subprocess
 import uuid
+import shutil
 import psutil
 import shortuuid
 from tqdm import tqdm
@@ -13,8 +14,9 @@ from pprint import pprint
 
 from . import tracker
 from . import datetime_utils
-from . import _config
+from . import config
 from . import reporting_callbacks
+from . import exceptions
 
 
 def track_new(command,
@@ -42,7 +44,7 @@ def track_new(command,
     save_filename : str, optional
         Filename to which to save command output
     to_db : bool, optional
-        Save all checkpoints to database
+        Save all blocks to database
     session_name : str, optional
         Name of job session, if saving jobs to database
     unique : bool, optional
@@ -58,36 +60,39 @@ def track_new(command,
         :code:`update_period=-1`, as default, the only update occurs on completion.
     """
     callbacks = [reporting_callbacks.PrintReport()]
-    if send_text:
-        callbacks.append(reporting_callbacks.TextNotification())
     if send_email:
         callbacks.append(reporting_callbacks.EmailNotification())
+    if send_text:
+        callbacks.append(reporting_callbacks.TextNotification())
 
     # Key for storing stdout text to file
     if save_filename or store_stdout:
         stdout_fn = f"{shortuuid.uuid()}.txt"
-        stdout_path = f"{_config.JORT_DIR}/{stdout_fn}"
+        stdout_path =  os.path.join(config._get_data_dir(), stdout_fn)
     else:
         stdout_fn = None
 
     tr = tracker.Tracker(to_db=to_db, session_name=session_name)
     if unique:
-        with contextlib.closing(sqlite3.connect(f"{_config.JORT_DIR}/jort.db")) as con:
-            cur = con.cursor()
-            sql = (
-                "SELECT status FROM jobs WHERE session_id == ? AND job_name == ?"
-            )
-            res = cur.execute(sql, (tr.session_id, command))
-            for row in res.fetchall():
-                status = row[0]
-                if status == "success":
-                    print("Found matching job that completed successfully; skipping...")
-                    con.close()
-                    return
+        try: 
+            with contextlib.closing(sqlite3.connect(config._get_database_path())) as con:
+                cur = con.cursor()
+                sql = (
+                    "SELECT status FROM jobs WHERE session_id = ? AND job_name = ?"
+                )
+                res = cur.execute(sql, (tr.session_id, command))
+                for row in res.fetchall():
+                    status = row[0]
+                    if status == "success":
+                        print("Found matching job that completed successfully; skipping...")
+                        con.close()
+                        return
+        except sqlite3.OperationalError as e:
+            raise exceptions.JortException("Missing database - make sure to initialize with `jort.init()` or `jort init`") from e 
 
     tr.start(name=command)
 
-    payload = tr.open_checkpoint_payloads[command]
+    payload = tr.open_block_payloads[command]
 
     payload['stdout_fn'] = stdout_fn
 
@@ -119,7 +124,7 @@ def track_new(command,
     if save_filename or store_stdout:
         with open(stdout_path, "a+") as f:
             f.write(f"{command}\n")
-            f.write(f"--\n")
+            f.write(f"----\n")
 
     buffer = ""
     temp_start = time.time()
@@ -167,13 +172,8 @@ def track_new(command,
     if verbose:
         pprint(payload)
 
-    if save_filename or store_stdout:
-        if save_filename:
-            subprocess.call(["cp", stdout_path, save_filename])
-        try:
-            subprocess.call(["rm", stdout_path])
-        except Exception as e:
-            raise e
+    if save_filename:
+        shutil.move(stdout_path, save_filename)
 
 
 def track_existing(pid,
@@ -191,7 +191,7 @@ def track_existing(pid,
     pid : int
         Process ID of existing process
     to_db : bool, optional
-        Save all checkpoints to database
+        Save all blocks to database
     session_name : str, optional
         Name of job session, if saving jobs to database
     send_text : bool, optional
@@ -205,10 +205,10 @@ def track_existing(pid,
         :code:`update_period=-1`, as default, the only update occurs on completion.
     """
     callbacks = [reporting_callbacks.PrintReport()]
-    if send_text:
-        callbacks.append(reporting_callbacks.TextNotification())
     if send_email:
         callbacks.append(reporting_callbacks.EmailNotification())
+    if send_text:
+        callbacks.append(reporting_callbacks.TextNotification())
 
     # Does not support stdout tracking
     stdout_fn = None
@@ -219,7 +219,7 @@ def track_existing(pid,
 
     tr = tracker.Tracker(to_db=to_db, session_name=session_name)
     tr.start(name=command, date_created=datetime_utils.get_iso_date(p.create_time()))
-    payload = tr.open_checkpoint_payloads[command]
+    payload = tr.open_block_payloads[command]
 
     if verbose:
         pprint(payload)

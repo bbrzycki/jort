@@ -188,6 +188,7 @@ class Tracker(object):
         if payload["status"] == "running":
             payload["status"] = "success"
         start = payload["date_created"]
+        # Update payload with runtime details in one go
         stop = datetime_utils._update_payload_times(payload)
         self.blocks[name].add_times(start, stop)
 

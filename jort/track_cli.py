@@ -159,11 +159,11 @@ def track_new(command,
     if verbose:
         print(f"Exit code: {p.returncode}")
 
-    if p.returncode == 0:
-        payload["status"] = "success"
-    else:
+    if p.returncode != 0 or "Error:" in line or "Exception:" in line:
         payload["status"] = "error"
         payload["error_message"] = line
+    else:
+        payload["status"] = "success"
     tr.stop(callbacks=callbacks)
     # print("")
     # if payload["runtime"] < 10:

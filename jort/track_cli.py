@@ -175,6 +175,8 @@ def track_new(command,
     if save_filename:
         shutil.move(stdout_path, save_filename)
 
+    return payload
+
 
 def track_existing(pid,
                    to_db=False,
@@ -244,3 +246,5 @@ def track_existing(pid,
 
     if verbose:
         pprint(payload)
+
+    return payload

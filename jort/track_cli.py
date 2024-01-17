@@ -128,6 +128,7 @@ def track_new(command,
 
     buffer = ""
     temp_start = time.time()
+    line = ""
     for line in p.stdout:
         if update_period > 0 and time.time() - temp_start >= update_period:
             if verbose:

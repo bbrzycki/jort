@@ -17,6 +17,7 @@ Table of Contents
    scripts
    command_line
    jort
+   modules
 
 
 Indices and tables

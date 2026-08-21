@@ -1,4 +1,3 @@
-import numpy as np
 from . import datetime_utils
 
 
@@ -28,7 +27,7 @@ class Block(object):
         self.elapsed = [datetime_utils.get_runtime(t1, t2) 
                         for (t1, t2) in zip(self.starts, self.stops)]
         
-    def add_times(self, start, stop):
+    def add_times(self, start, stop, elapsed=None):
         """
         Store start, stop, and elpased times to block.
 
@@ -41,7 +40,9 @@ class Block(object):
         """
         self.starts.append(start)
         self.stops.append(stop)
-        self.elapsed.append(datetime_utils.get_runtime(start, stop))
+        self.elapsed.append(
+            datetime_utils.get_runtime(start, stop) if elapsed is None else elapsed
+        )
     
     def report(self, dec=1):
         """
@@ -58,8 +59,10 @@ class Block(object):
             Runtime details
         """
         if len(self.elapsed) > 0:
-            elapsed_stats = format_reported_times(np.mean(self.elapsed), 
-                                                np.std(self.elapsed), 
+            mean = sum(self.elapsed) / len(self.elapsed)
+            variance = sum((value - mean) ** 2 for value in self.elapsed) / len(self.elapsed)
+            elapsed_stats = format_reported_times(mean,
+                                                variance ** 0.5,
                                                 dec=dec)
             return (
                 f"{self.name} | "

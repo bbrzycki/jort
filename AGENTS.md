@@ -31,12 +31,18 @@ When changing command execution or notifications:
 ## Agent operation
 
 When the user explicitly asks for an email after a long-running command or
-benchmark, use the existing CLI from that command's project directory:
+benchmark, use the existing CLI from that command's project directory. For a
+job that may outlive the agent session, use the detached worker:
 
 ```bash
 jort track --email 'python benchmark.py'
+jort track --detach --email --json 'python benchmark.py'
 ```
 
 Use `--text` only when SMS is also requested. Use `--shell` for shell syntax
-such as `cd` or `&&`, and do not put credentials in repository files or command
-arguments.
+such as `cd` or `&&`. Use `--json` when the result must be parsed, and use the
+returned job ID with `jort status` or `jort logs`. Do not put credentials in
+repository files or command arguments.
+
+Use `--argv --` when an exact argument vector is important and the command
+contains option-like arguments, for example `jort track --argv -- python -c ...`.

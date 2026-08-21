@@ -32,7 +32,7 @@ As an example of the basic usage:
 
 The printed report appears as:
 
-.. code-block:: Python
+.. code-block:: text
 
     my_script | 11.0 s ± 0.0 s per iteration, n = 1
     sleep_1s | 1.0 s ± 0.0 s per iteration, n = 10
@@ -96,7 +96,7 @@ your own account.
     tr.stop(callbacks=[jort.EmailNotification()])
 
 :code:`TextNotification`
-^^^^^^^^^^^^^^^^^^^^^^^
+^^^^^^^^^^^^^^^^^^^^^^^^
 
 :code:`TextNotification` texts a formatted message with the runtime. :code:`jort` uses 
 Twilio to handle SMS messaging. Twilio offers a `free trial tier <https://support.twilio.com/hc/en-us/articles/223136107-How-does-Twilio-s-Free-Trial-work->`_.
@@ -137,7 +137,7 @@ Demonstrating on the first example:
 
 The printed report appears as:
 
-.. code-block:: Python
+.. code-block:: text
 
     my_script | 11.0 s ± 0.0 s per iteration, n = 1
     sleep_1s | 1.0 s ± 0.0 s per iteration, n = 10
@@ -164,7 +164,7 @@ instantiating a :code:`Tracker`:
         for _ in range(10):
             sleep_1s()
 
-Saving to database 
+Saving to database
 ------------------
 
 `jort` allows you to save details of finished jobs to a local database. To save all 

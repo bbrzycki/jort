@@ -22,7 +22,9 @@ independent options, so either or both can be enabled:
 
 The function is exported at the package top level. It accepts a command string,
 supports shell execution with :code:`use_shell=True`, and returns the completed
-job payload.
+job payload. The payload includes the exit code, signal when applicable,
+working directory, argv, git revision, command fingerprint, process metrics,
+and per-channel notification results.
 
 For Python code that already manages its own timing blocks, use the existing
 callbacks instead:
@@ -42,6 +44,17 @@ independent and can be combined:
 .. code-block:: bash
 
     jort track --email --text 'pytest -q'
+
+Use :code:`--json` for agent integrations, and :code:`--detach` when the job
+must continue after the calling terminal exits. The resulting job ID can be
+passed to :code:`jort status`, :code:`jort logs`, or :code:`jort cancel`.
+
+For exact argument preservation at the CLI, use :code:`--argv --` before the
+program and its arguments.
+
+Use :code:`jort benchmark --repeat N --warmup M` for repeated measurements;
+:code:`--baseline-session` adds a median comparison against prior successful
+runs.
 
 Use :code:`--shell` when the job is a shell expression involving commands,
 pipelines, redirects, or shell built-ins such as :code:`cd`:

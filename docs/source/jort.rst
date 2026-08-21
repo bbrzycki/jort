@@ -17,7 +17,7 @@ jort.block module
     :undoc-members:
     :show-inheritance:
 
-jort.track\_cli module 
+jort.track\_cli module
 ----------------------
 
 .. automodule:: jort.track_cli 
@@ -25,15 +25,15 @@ jort.track\_cli module
     :undoc-members:
     :show-inheritance:
 
-jort.reporting\_callbacks module 
---------------------------------
+jort.reporting\_callbacks module
+---------------------------------
 
 .. automodule:: jort.reporting_callbacks
     :members:
     :undoc-members:
     :show-inheritance:
 
-jort.exceptions module 
+jort.exceptions module
 ----------------------
 
 .. automodule:: jort.exceptions

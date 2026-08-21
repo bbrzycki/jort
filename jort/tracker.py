@@ -15,6 +15,7 @@ from . import config
 from . import block
 from . import datetime_utils
 from . import exceptions
+from . import database
         
 
 def _get_linenumber():
@@ -81,6 +82,7 @@ class Tracker(object):
         Manage session name and id. If session name is provided, get the id from database.
         """
         try:
+            database.ensure_database()
             with contextlib.closing(sqlite3.connect(config._get_database_path())) as con:
                 cur = con.cursor()
                 if self.session_name is not None:
@@ -100,12 +102,13 @@ class Tracker(object):
         except sqlite3.OperationalError as e:
             raise exceptions.JortException("Missing database - make sure to initialize with `jort.init()` or `jort init`") from e
 
-    def checkpoint(self, name=None, callbacks=[], to_db=False):
+    def checkpoint(self, name=None, callbacks=None, to_db=False):
         """
         A checkpoint opens a timing block that closes at the next checkpoint.
         Note that the last checkpoint needs to be closed with stop().
         """
         # First close any existing checkpoints
+        callbacks = callbacks or []
         for ckpt_name, payload in self.open_block_payloads.copy().items():
             if payload["is_checkpoint"]:
                 self.stop(name=ckpt_name, callbacks=callbacks, to_db=to_db)
@@ -115,7 +118,8 @@ class Tracker(object):
         
         self.start(name=name, is_checkpoint=True)
 
-    def start(self, name=None, date_created=None, is_checkpoint=False):
+    def start(self, name=None, date_created=None, is_checkpoint=False,
+              job_id=None, metadata=None):
         """
         Open block and start timer. Creates initial job status payload for use
         with notifications.
@@ -143,7 +147,7 @@ class Tracker(object):
 
         self.open_block_payloads[name] = {
             "user_id": None,
-            "job_id": shortuuid.uuid(),
+            "job_id": job_id or shortuuid.uuid(),
             "session_id": self.session_id,
             "name": name,
             "long_name": name,
@@ -152,17 +156,20 @@ class Tracker(object):
             "date_created": start,
             "date_modified": now,
             "runtime": datetime_utils.get_runtime(start, now),
+            "_monotonic_start": time.monotonic(),
             "stdout_fn": None,
             "unread": True,
             "error_message": None,
             "is_checkpoint": is_checkpoint,
         }
+        if metadata:
+            self.open_block_payloads[name].update(metadata)
         if name not in self.blocks:
             self.blocks[name] = block.Block(name)
         logger = logging.getLogger(f"{name}.start")
         logger.debug("Profiling block started.")
         
-    def stop(self, name=None, callbacks=[], to_db=False):
+    def stop(self, name=None, callbacks=None, to_db=False):
         """
         Close block and stop timer. Store start, stop, and elapsed times.
         Process job status payload and execute notification callbacks.
@@ -179,6 +186,7 @@ class Tracker(object):
         to_db : bool, optional
             Save block runtime details to database
         """
+        callbacks = callbacks or []
         if name is None:
             name = list(self.open_block_payloads.keys())[-1]
         elif name not in self.open_block_payloads:
@@ -190,47 +198,51 @@ class Tracker(object):
         start = payload["date_created"]
         # Update payload with runtime details in one go
         stop = datetime_utils._update_payload_times(payload)
-        self.blocks[name].add_times(start, stop)
+        self.blocks[name].add_times(start, stop, elapsed=payload["runtime"])
+        payload.pop("_monotonic_start", None)
 
         logger = logging.getLogger(f"{name}.stop")
         logger.debug("Profiling block stopped.")
         formatted_runtime = block.format_reported_times(self.blocks[name].elapsed[-1])
         logger.info(f"Elapsed time: {formatted_runtime}")
 
-        if self.to_db or to_db:
+        persist = self.to_db or to_db
+        if persist:
             if not self.session_configured:
                 self._configure_db_session()
-            try:
-                with contextlib.closing(sqlite3.connect(config._get_database_path())) as con:
-                    cur = con.cursor()
-                    # Make sure session info is included in db
-                    sql = (
-                        "INSERT OR IGNORE INTO sessions VALUES(?, ?)"
-                    )
-                    cur.execute(sql, (self.session_id, self.session_name))
-                    # Insert job into db
-                    sql = (
-                        "INSERT INTO jobs VALUES("
-                        "    :job_id,"
-                        "    :session_id,"
-                        "    :name,"
-                        "    :status,"
-                        "    :machine,"
-                        "    :date_created,"
-                        "    :date_modified,"
-                        "    :runtime,"
-                        "    :stdout_fn,"
-                        "    :error_message"
-                        ")"
-                    )
-                    cur.execute(sql, payload)
-                    job_id = cur.lastrowid
-                    con.commit()
-            except sqlite3.OperationalError as e:
-                raise exceptions.JortException("Missing database - make sure to initialize with `jort.init()` or `jort init`") from e
+            with contextlib.closing(sqlite3.connect(config._get_database_path())) as con:
+                con.execute(
+                    "INSERT OR IGNORE INTO sessions(session_id, session_name) VALUES(?, ?)",
+                    (self.session_id, self.session_name),
+                )
+                con.commit()
+            database.save_job(payload)
+            database.enqueue_notifications(payload)
 
+        notification_results = {}
         for callback in callbacks:
-            callback.execute(payload=payload)
+            channel = getattr(callback, "channel", callback.__class__.__name__.lower())
+            try:
+                result = callback.execute(payload=payload)
+                notification_results[channel] = {
+                    "status": "sent",
+                    "result": result,
+                }
+                if persist and channel != "print":
+                    database.update_notification(payload["job_id"], channel, "sent")
+            except Exception as error:
+                notification_results[channel] = {
+                    "status": "failed",
+                    "error": str(error),
+                }
+                if persist and channel != "print":
+                    database.update_notification(
+                        payload["job_id"], channel, "failed", str(error)
+                    )
+        payload["notifications"] = notification_results
+        if persist:
+            database.save_job(payload)
+        return payload
         
     def remove(self, name=None):
         """
@@ -267,7 +279,7 @@ class Tracker(object):
         payload["error_message"] = traceback.format_exc().strip().split('\n')[-1]
         raise
 
-    def track(self, f=None, callbacks=[], to_db=False, report=False):
+    def track(self, f=None, callbacks=None, to_db=False, report=False):
         """
         Function wrapper for tracker, to be used as a decorator. Creates a block
         with the input function's name. 
@@ -294,7 +306,12 @@ class Tracker(object):
                 self.start(name=func.__qualname__)
                 try:
                     result = func(*args, **kwargs)
-                except Exception as e:
+                except KeyboardInterrupt:
+                    payload = self.open_block_payloads[func.__qualname__]
+                    payload["status"] = "terminated"
+                    payload["error_message"] = "KeyboardInterrupt"
+                    raise
+                except BaseException:
                     payload = self.open_block_payloads[func.__qualname__]
                     payload["status"] = "error"
                     payload["error_message"] = traceback.format_exc().strip().split('\n')[-1]
@@ -376,7 +393,7 @@ class Tracker(object):
     
             
             
-def track(f=None, callbacks=[], to_db=False, report=True):
+def track(f=None, callbacks=None, to_db=False, report=True):
     """
     Independent function wrapper, to be used as a decorator, that creates a one-off
     tracker.

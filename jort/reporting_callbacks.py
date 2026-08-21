@@ -1,18 +1,13 @@
 from abc import ABC, abstractmethod
 import os
-import json
 import smtplib
 import ssl
-import email
 from html import escape as html_escape
-from email import encoders
-from email.mime.base import MIMEBase
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
 from email.mime.application import MIMEApplication
-import twilio.rest
-import humanfriendly
 from . import config
+from . import datetime_utils
 from . import exceptions
 
 
@@ -42,6 +37,8 @@ class PrintReport(Callback):
     """
     Print job runtime on completion.
     """
+    channel = "print"
+
     def __init__(self):
         pass
 
@@ -50,20 +47,32 @@ class PrintReport(Callback):
             return (
                 f'\n'
                 f'Your job `{payload["name"]}` successfully completed '
-                f'in {humanfriendly.format_timespan(payload["runtime"])}'
+                f'in {datetime_utils.format_timespan(payload["runtime"])}'
             )
         elif payload["status"] == "error":
-            error_text = payload["error_message"].split(":")[0]
+            error_text = str(payload.get("error_message") or "unknown error").split(":")[0]
             return (
                 f'\n'
                 f'Your job `{payload["name"]}` exited in error ({error_text}) '
-                f'after {humanfriendly.format_timespan(payload["runtime"])}'
+                f'after {datetime_utils.format_timespan(payload["runtime"])}'
             )
         elif payload["status"] == "finished":
             return (
                 f'\n'
                 f'Your job `{payload["name"]}` finished running '
-                f'in {humanfriendly.format_timespan(payload["runtime"])}'
+                f'in {datetime_utils.format_timespan(payload["runtime"])}'
+            )
+        elif payload["status"] == "terminated":
+            return (
+                f'\n'
+                f'Your job `{payload["name"]}` was terminated '
+                f'after {datetime_utils.format_timespan(payload["runtime"])}'
+            )
+        elif payload["status"] == "timeout":
+            return (
+                f'\n'
+                f'Your job `{payload["name"]}` exceeded its time limit '
+                f'after {datetime_utils.format_timespan(payload["runtime"])}'
             )
         else:
             raise exceptions.JortException(f'Invalid status: {payload["status"]}')
@@ -77,20 +86,34 @@ class EmailNotification(Callback):
     Send email notifications to and from your email account. Requires login 
     credentials, which can be entered at the command line via :code:`jort config`.
     """
-    def __init__(self, email=None):
+    channel = "email"
+
+    def __init__(self, email=None, validate=False):
         config_data = config._get_config_data()
         self.email = config_data.get("email")
         if email is not None:
             self.email = email
         self.email_password = config_data.get("email_password")
         self.smtp_server = config_data.get("smtp_server")
+        self.smtp_port = config_data.get("smtp_port", 465)
+        self.to_email = config_data.get("email_to", self.email)
 
+        if validate:
+            self.validate()
+
+    def validate(self):
         if self.email_password is None:
             raise exceptions.JortCredentialException("Missing email password, add with `jort config email` command")
         if self.smtp_server is None:
             raise exceptions.JortException("Missing SMTP server, add with `jort config email` command")
         if self.email is None:
             raise exceptions.JortException("Missing email")
+        if self.to_email is None:
+            raise exceptions.JortException("Missing email recipient")
+        try:
+            self.smtp_port = int(self.smtp_port)
+        except (TypeError, ValueError) as error:
+            raise exceptions.JortException("SMTP port must be an integer") from error
 
     def format_message(self, payload):
         status = payload["status"]
@@ -116,6 +139,20 @@ class EmailNotification(Callback):
                 "color": "#175cd3",
                 "background": "#eff8ff",
             },
+            "terminated": {
+                "label": "Terminated",
+                "headline": "Your job was terminated",
+                "subject": "Terminated",
+                "color": "#b54708",
+                "background": "#fffaeb",
+            },
+            "timeout": {
+                "label": "Timed out",
+                "headline": "Your job exceeded its time limit",
+                "subject": "Timed out",
+                "color": "#b54708",
+                "background": "#fffaeb",
+            },
         }
         if status not in status_details:
             raise exceptions.JortException(f'Invalid status: {status}')
@@ -123,9 +160,11 @@ class EmailNotification(Callback):
         details = status_details[status]
         job_name = str(payload.get("name", "Unnamed job"))
         date_modified = str(payload.get("date_modified", "Unknown"))
-        runtime = humanfriendly.format_timespan(payload["runtime"])
+        runtime = datetime_utils.format_timespan(payload["runtime"])
         machine = payload.get("machine")
         machine_text = str(machine) if machine is not None else None
+        exit_code = payload.get("exit_code")
+        pid = payload.get("pid")
         error_text = self._compact_error(payload.get("error_message"))
 
         subject_job = " ".join(job_name.split())
@@ -148,6 +187,10 @@ class EmailNotification(Callback):
         ]
         if machine_text is not None:
             body_lines.append(f"Machine:  {machine_text}")
+        if exit_code is not None:
+            body_lines.append(f"Exit code: {exit_code}")
+        if pid is not None:
+            body_lines.append(f"PID:      {pid}")
         if error_text is not None:
             body_lines.extend(["", f"Error: {error_text}"])
         if payload.get("stdout_fn") is not None:
@@ -159,12 +202,25 @@ class EmailNotification(Callback):
         html_date = html_escape(date_modified)
         html_runtime = html_escape(runtime)
         html_machine = html_escape(machine_text) if machine_text is not None else None
+        html_exit_code = html_escape(str(exit_code)) if exit_code is not None else None
+        html_pid = html_escape(str(pid)) if pid is not None else None
         html_error = html_escape(error_text) if error_text is not None else None
         machine_row = ""
         if html_machine is not None:
             machine_row = (
                 f'<tr><td style="padding:7px 0;color:#667085;">Machine</td>'
                 f'<td style="padding:7px 0;text-align:right;">{html_machine}</td></tr>'
+            )
+        process_rows = ""
+        if html_exit_code is not None:
+            process_rows += (
+                f'<tr><td style="padding:7px 0;color:#667085;">Exit code</td>'
+                f'<td style="padding:7px 0;text-align:right;">{html_exit_code}</td></tr>'
+            )
+        if html_pid is not None:
+            process_rows += (
+                f'<tr><td style="padding:7px 0;color:#667085;">PID</td>'
+                f'<td style="padding:7px 0;text-align:right;">{html_pid}</td></tr>'
             )
         error_block = ""
         if html_error is not None:
@@ -218,6 +274,7 @@ class EmailNotification(Callback):
             f'<tr><td style="padding:7px 0;color:#667085;">Finished</td>'
             f'<td style="padding:7px 0;text-align:right;">{html_date} UTC</td></tr>'
             f'{machine_row}'
+            f'{process_rows}'
             '</table>'
             f'{error_block}{attachment_note}'
             '</td></tr>'
@@ -262,13 +319,16 @@ class EmailNotification(Callback):
 
         message["Subject"] = email_data["subject"]
         message["From"] = self.email
-        message["To"] = self.email
+        message["To"] = self.to_email
 
         # Secure connection
         context = ssl.create_default_context()
-        with smtplib.SMTP_SSL(self.smtp_server, port=465, context=context) as server:
+        self.validate()
+        with smtplib.SMTP_SSL(self.smtp_server, port=self.smtp_port, context=context,
+                              timeout=30) as server:
             server.login(self.email, self.email_password)
             server.sendmail(message["From"], message["To"], message.as_string())
+        return {"recipient": self.to_email}
 
 
 class TextNotification(Callback):
@@ -276,7 +336,9 @@ class TextNotification(Callback):
     Send SMS notifications to and from numbers managed by your Twilio account. Requires 
     Twilio credentials, which can be entered at the command line via :code:`jort config`.
     """
-    def __init__(self, receive_number=None):
+    channel = "text"
+
+    def __init__(self, receive_number=None, validate=False):
         config_data = config._get_config_data()
         self.receive_number = config_data.get("twilio_receive_number")
         if receive_number is not None:
@@ -285,6 +347,10 @@ class TextNotification(Callback):
         self.twilio_account_sid = config_data.get("twilio_account_sid")
         self.twilio_auth_token = config_data.get("twilio_auth_token")
 
+        if validate:
+            self.validate()
+
+    def validate(self):
         if self.twilio_account_sid is None or self.twilio_auth_token is None:
             raise exceptions.JortCredentialException("Missing Twilio credentials, add with `jort config text` command")
         if self.send_number is None:
@@ -296,25 +362,39 @@ class TextNotification(Callback):
         if payload["status"] == "success":
             return (
                 f'Your job `{payload["name"]}` successfully completed '
-                f'in {humanfriendly.format_timespan(payload["runtime"])}'
+                f'in {datetime_utils.format_timespan(payload["runtime"])}'
             )
         elif payload["status"] == "error":
-            error_text = payload["error_message"].split(":")[0]
+            error_text = str(payload.get("error_message") or "unknown error").split(":")[0]
             return (
                 f'Your job `{payload["name"]}` exited in error ({error_text}) '
-                f'after {humanfriendly.format_timespan(payload["runtime"])}'
+                f'after {datetime_utils.format_timespan(payload["runtime"])}'
             )
         elif payload["status"] == "finished":
             return (
                 f'Your job `{payload["name"]}` finished running '
-                f'in {humanfriendly.format_timespan(payload["runtime"])}'
+                f'in {datetime_utils.format_timespan(payload["runtime"])}'
+            )
+        elif payload["status"] == "terminated":
+            return (
+                f'Your job `{payload["name"]}` was terminated '
+                f'after {datetime_utils.format_timespan(payload["runtime"])}'
+            )
+        elif payload["status"] == "timeout":
+            return (
+                f'\n'
+                f'Your job `{payload["name"]}` exceeded its time limit '
+                f'after {datetime_utils.format_timespan(payload["runtime"])}'
             )
         else:
             raise exceptions.JortException(f'Invalid status: {payload["status"]}')
     
     def execute(self, payload):
-        client = twilio.rest.Client(self.twilio_account_sid,
-                                    self.twilio_auth_token)
+        self.validate()
+        from twilio.rest import Client
+
+        client = Client(self.twilio_account_sid, self.twilio_auth_token)
         message = client.messages.create(body=self.format_message(payload),
                                          from_=self.send_number,
                                          to=self.receive_number)
+        return {"sid": getattr(message, "sid", None)}

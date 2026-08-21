@@ -96,6 +96,30 @@ The two notification options are independent; use either one or both. See the
 [public interface reference](docs/source/public_api.rst) before adding a new
 command-running API.
 
+For agent-friendly automation, use JSON output and a detached worker:
+
+```bash
+jort track --detach --email --json 'python benchmark.py'
+jort status JOB_ID --json
+jort logs JOB_ID
+```
+
+`jort track` exits nonzero when the tracked command exits nonzero. Use
+`jort doctor` to validate local storage and notification configuration, and
+`jort notify test --email` to send a real email test.
+
+Use `--timeout SECONDS` for a bounded job, `--strict-notifications` to make
+delivery failures produce exit code 2, and `--argv --` when exact argument
+preservation matters.
+
+For repeated measurements, use the built-in benchmark summary:
+
+```bash
+jort benchmark --repeat 5 --warmup 2 --json 'python benchmark.py'
+# Compare against successful runs saved under another session.
+jort benchmark --baseline-session main --json 'python benchmark.py'
+```
+
 ## Saving to Database
 
 `jort` allows you to save details of finished jobs to a local database. To save all blocks to database, use the `to_db` keyword. You can also optionally group jobs under a common "session" by specifying the `session_name` keyword:
@@ -132,8 +156,11 @@ jort track PID
 ```
 Similarly, add the `-e` or `-t` flags for either e-mail or SMS notification on completion, and `-d` and `-s` flags for saving info to database.
 
-## Future Directions
+## Job lifecycle commands
 
-* Save runtimes and other details in persistent format
-* Potential support for more complex profiling
-* Offer a centralized option for notification handling
+`jort inspect --json` lists persisted jobs. `jort status JOB_ID --json` returns
+the stable job payload, including exit code, working directory, git revision,
+metrics, and notification results. `jort cancel JOB_ID` requests termination.
+
+Captured output is stored under the local Jort data directory. Use
+`--max-output-bytes` to bound an attachment and `jort logs JOB_ID` to retrieve it.

@@ -19,6 +19,21 @@ from . import reporting_callbacks
 from . import exceptions
 
 
+def _notification_callbacks(send_text=False, send_email=False):
+    """Build the standard callback list for a tracked command.
+
+    Email and SMS are intentionally independent channels. Keeping their
+    construction in one place prevents the new-process and existing-process
+    paths from drifting apart.
+    """
+    callbacks = [reporting_callbacks.PrintReport()]
+    if send_email:
+        callbacks.append(reporting_callbacks.EmailNotification())
+    if send_text:
+        callbacks.append(reporting_callbacks.TextNotification())
+    return callbacks
+
+
 def track_new(command,
               use_shell=False,
               store_stdout=False,
@@ -59,11 +74,8 @@ def track_new(command,
         Number of seconds between each payload update and stdout write. If 
         :code:`update_period=-1`, as default, the only update occurs on completion.
     """
-    callbacks = [reporting_callbacks.PrintReport()]
-    if send_email:
-        callbacks.append(reporting_callbacks.EmailNotification())
-    if send_text:
-        callbacks.append(reporting_callbacks.TextNotification())
+    callbacks = _notification_callbacks(send_text=send_text,
+                                        send_email=send_email)
 
     # Key for storing stdout text to file
     if save_filename or store_stdout:
@@ -207,11 +219,8 @@ def track_existing(pid,
         Number of seconds between each payload update. If 
         :code:`update_period=-1`, as default, the only update occurs on completion.
     """
-    callbacks = [reporting_callbacks.PrintReport()]
-    if send_email:
-        callbacks.append(reporting_callbacks.EmailNotification())
-    if send_text:
-        callbacks.append(reporting_callbacks.TextNotification())
+    callbacks = _notification_callbacks(send_text=send_text,
+                                        send_email=send_email)
 
     # Does not support stdout tracking
     stdout_fn = None

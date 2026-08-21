@@ -74,6 +74,28 @@ For SMS text and e-mail notifications, you can enter credentials with the comman
 
 SMS handling is done through Twilio, which offers a [free trial tier](https://support.twilio.com/hc/en-us/articles/223136107-How-does-Twilio-s-Free-Trial-work-). As of now, `jort` handles notifications locally, so you need to add your own credentials for each service. 
 
+The existing command-execution interfaces are also the notification interfaces:
+
+```python
+import jort
+
+payload = jort.track_new(
+    "pytest -q",
+    send_email=True,
+    send_text=True,
+)
+```
+
+From any project directory, the equivalent command-line interface is:
+
+```bash
+jort track --email --text 'pytest -q'
+```
+
+The two notification options are independent; use either one or both. See the
+[public interface reference](docs/source/public_api.rst) before adding a new
+command-running API.
+
 ## Saving to Database
 
 `jort` allows you to save details of finished jobs to a local database. To save all blocks to database, use the `to_db` keyword. You can also optionally group jobs under a common "session" by specifying the `session_name` keyword:

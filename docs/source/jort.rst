@@ -9,10 +9,10 @@ jort.tracker module
     :undoc-members:
     :show-inheritance:
 
-jort.checkpoint module
-----------------------
+jort.block module
+-----------------
 
-.. automodule:: jort.checkpoint 
+.. automodule:: jort.block
     :members:
     :undoc-members:
     :show-inheritance:
@@ -40,4 +40,3 @@ jort.exceptions module
     :members:
     :undoc-members:
     :show-inheritance:
-

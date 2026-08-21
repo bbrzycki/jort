@@ -4,6 +4,7 @@ import json
 import smtplib
 import ssl
 import email
+from html import escape as html_escape
 from email import encoders
 from email.mime.base import MIMEBase
 from email.mime.text import MIMEText
@@ -92,69 +93,137 @@ class EmailNotification(Callback):
             raise exceptions.JortException("Missing email")
 
     def format_message(self, payload):
-        if payload["machine"] is not None:
-            machine_text = f' on machine {payload["machine"]}'
-            html_machine_text = f' on machine <strong>{payload["machine"]}</strong>'
-        else:
-            machine_text = ''
-            html_machine_text = ''
+        status = payload["status"]
+        status_details = {
+            "success": {
+                "label": "Completed",
+                "headline": "Your job completed successfully",
+                "subject": "Completed",
+                "color": "#067647",
+                "background": "#ecfdf3",
+            },
+            "error": {
+                "label": "Failed",
+                "headline": "Your job exited with an error",
+                "subject": "Failed",
+                "color": "#b42318",
+                "background": "#fef3f2",
+            },
+            "finished": {
+                "label": "Finished",
+                "headline": "Your job finished running",
+                "subject": "Finished",
+                "color": "#175cd3",
+                "background": "#eff8ff",
+            },
+        }
+        if status not in status_details:
+            raise exceptions.JortException(f'Invalid status: {status}')
 
-        if payload["status"] == "success":
-            subject = "[jort] Your job finished successfully!"
+        details = status_details[status]
+        job_name = str(payload.get("name", "Unnamed job"))
+        date_modified = str(payload.get("date_modified", "Unknown"))
+        runtime = humanfriendly.format_timespan(payload["runtime"])
+        machine = payload.get("machine")
+        machine_text = str(machine) if machine is not None else None
+        error_text = self._compact_error(payload.get("error_message"))
 
-            summary_text = (
-                f'Your job `{payload["name"]}` completed at {payload["date_modified"]} (UTC)'
-                f'{machine_text} with no errors.'
-            )
-            html_summary_text = (
-                f'Your job <strong>{payload["name"]}</strong> completed at <strong>{payload["date_modified"]}</strong> (UTC)'
-                f'{html_machine_text} with no errors.'
-            )
-        elif payload["status"] == "error":
-            subject = "[jort] Your job exited with an error"
+        subject_job = " ".join(job_name.split())
+        if len(subject_job) > 90:
+            subject_job = f"{subject_job[:87]}..."
+        subject = f'[jort] {details["subject"]}: {subject_job}'
 
-            error_text = payload["error_message"].split(":")[0]
+        # Keep the plain-text alternative useful for clients that do not render
+        # HTML, while preserving multiline shell commands in a readable block.
+        indented_job = job_name.replace("\n", "\n    ")
+        body_lines = [
+            "JORT / JOB NOTIFICATION",
+            "",
+            details["headline"],
+            "",
+            f"Job:      {indented_job}",
+            f"Status:   {details['label']}",
+            f"Runtime:  {runtime}",
+            f"Finished: {date_modified} (UTC)",
+        ]
+        if machine_text is not None:
+            body_lines.append(f"Machine:  {machine_text}")
+        if error_text is not None:
+            body_lines.extend(["", f"Error: {error_text}"])
+        if payload.get("stdout_fn") is not None:
+            body_lines.extend(["", "Full command output is attached as output.txt."])
+        body_lines.extend(["", "--", "jort"])
+        body = "\r\n".join(body_lines)
 
-            summary_text = (
-                f'Your job `{payload["name"]}` exited at {payload["date_modified"]} (UTC)'
-                f'{machine_text} with error `{error_text}`.'
+        html_job = html_escape(job_name).replace("\n", "<br>")
+        html_date = html_escape(date_modified)
+        html_runtime = html_escape(runtime)
+        html_machine = html_escape(machine_text) if machine_text is not None else None
+        html_error = html_escape(error_text) if error_text is not None else None
+        machine_row = ""
+        if html_machine is not None:
+            machine_row = (
+                f'<tr><td style="padding:7px 0;color:#667085;">Machine</td>'
+                f'<td style="padding:7px 0;text-align:right;">{html_machine}</td></tr>'
             )
-            html_summary_text = (
-                f'Your job <strong>{payload["name"]}</strong> exited at <strong>{payload["date_modified"]}</strong> (UTC)'
-                f'{html_machine_text} with error <strong>{error_text}</strong>.'
+        error_block = ""
+        if html_error is not None:
+            error_block = (
+                f'<div style="margin-top:20px;padding:12px 14px;'
+                f'border-left:4px solid #d92d20;background:#fef3f2;">'
+                f'<div style="font-size:12px;font-weight:700;color:#b42318;'
+                f'text-transform:uppercase;letter-spacing:.04em;">Error</div>'
+                f'<div style="margin-top:4px;color:#7a271a;word-break:break-word;">'
+                f'{html_error}</div></div>'
             )
-        elif payload["status"] == "finished":
-            subject = "[jort] Your job has finished!"
+        attachment_note = ""
+        if payload.get("stdout_fn") is not None:
+            attachment_note = (
+                '<p style="margin:20px 0 0;color:#667085;font-size:13px;">'
+                'Full command output is attached as <strong>output.txt</strong>.</p>'
+            )
 
-            summary_text = (
-                f'Your job `{payload["name"]}` finished running at {payload["date_modified"]} (UTC)'
-                f'{machine_text}.'
-            )
-            html_summary_text = (
-                f'Your job <strong>{payload["name"]}</strong> finished running at <strong>{payload["date_modified"]}</strong> (UTC)'
-                f'{html_machine_text}.'
-            )
-        else:
-            raise exceptions.JortException(f'Invalid status: {payload["status"]}')
-        
-        runtime_text = f'The job\'s total runtime was {humanfriendly.format_timespan(payload["runtime"])}.'
-        html_runtime_text = f'The job\'s total runtime was <strong>{humanfriendly.format_timespan(payload["runtime"])}</strong>.'
-
-        body = (
-            f'{summary_text}\r\n'
-            f'{runtime_text}\r\n'
-            f'--\r\n'
-            f'jort'
-        )
         html_body = (
-            f'<html>'
-            f'<head></head>'
-            f'<body>'
-            f'  <p>{html_summary_text}</p>'
-            f'  <p>{html_runtime_text}</p>'
-            f'  <p>--<br>jort</p>'
-            f'</body>'
-            f'</html>'
+            '<!doctype html>'
+            '<html><head><meta charset="utf-8"></head>'
+            '<body style="margin:0;background:#f2f4f7;color:#101828;'
+            'font-family:-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif;">'
+            '<div style="padding:28px 14px;">'
+            '<table role="presentation" width="100%" cellpadding="0" cellspacing="0">'
+            '<tr><td align="center">'
+            '<table role="presentation" width="100%" cellpadding="0" cellspacing="0" '
+            'style="max-width:600px;background:#ffffff;border:1px solid #eaecf0;'
+            'border-radius:12px;overflow:hidden;">'
+            '<tr><td style="padding:20px 24px;background:#101828;color:#ffffff;">'
+            '<div style="font-size:11px;font-weight:700;letter-spacing:.12em;'
+            'color:#98a2b3;">JORT / JOB NOTIFICATION</div>'
+            f'<div style="margin-top:8px;font-size:22px;font-weight:650;">'
+            f'{details["headline"]}</div></td></tr>'
+            '<tr><td style="padding:24px;">'
+            f'<span style="display:inline-block;padding:5px 10px;border-radius:999px;'
+            f'background:{details["background"]};color:{details["color"]};'
+            f'font-size:12px;font-weight:700;">{details["label"]}</span>'
+            f'<div style="margin-top:16px;padding:12px 14px;background:#f8fafc;'
+            'border:1px solid #eaecf0;border-radius:8px;font-family:ui-monospace, '
+            'SFMono-Regular, Menlo, monospace;font-size:13px;line-height:1.5;'
+            f'word-break:break-word;">{html_job}</div>'
+            '<table role="presentation" width="100%" cellpadding="0" cellspacing="0" '
+            'style="margin-top:18px;border-collapse:collapse;font-size:14px;">'
+            f'<tr><td style="padding:7px 0;color:#667085;">Status</td>'
+            f'<td style="padding:7px 0;text-align:right;font-weight:600;">'
+            f'{details["label"]}</td></tr>'
+            f'<tr><td style="padding:7px 0;color:#667085;">Runtime</td>'
+            f'<td style="padding:7px 0;text-align:right;font-weight:600;">'
+            f'{html_runtime}</td></tr>'
+            f'<tr><td style="padding:7px 0;color:#667085;">Finished</td>'
+            f'<td style="padding:7px 0;text-align:right;">{html_date} UTC</td></tr>'
+            f'{machine_row}'
+            '</table>'
+            f'{error_block}{attachment_note}'
+            '</td></tr>'
+            '<tr><td style="padding:16px 24px;border-top:1px solid #eaecf0;'
+            'color:#98a2b3;font-size:12px;">Jort · local job notification</td></tr>'
+            '</table></td></tr></table></div></body></html>'
         )
         email_data = {
             "subject": subject,
@@ -162,6 +231,16 @@ class EmailNotification(Callback):
             "html_body": html_body,
         }
         return email_data
+
+    @staticmethod
+    def _compact_error(error_message):
+        """Return a concise, single-line error suitable for an email."""
+        if error_message is None:
+            return None
+        error_text = " ".join(str(error_message).split())
+        if len(error_text) > 500:
+            return f"{error_text[:497]}..."
+        return error_text
 
     def execute(self, payload):
         email_data = self.format_message(payload)
@@ -239,5 +318,3 @@ class TextNotification(Callback):
         message = client.messages.create(body=self.format_message(payload),
                                          from_=self.send_number,
                                          to=self.receive_number)
-
-

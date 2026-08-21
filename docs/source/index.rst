@@ -13,6 +13,7 @@ Table of Contents
    :maxdepth: 1
    
    installation
+   public_api
    scripts
    command_line
    jort

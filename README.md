@@ -175,14 +175,18 @@ jort dashboard
 ```
 
 Jort opens a small dashboard at a loopback-only URL. It shows active tracked
-jobs, elapsed time, aggregate process-tree memory and CPU data, a bounded
-output tail on demand, and recent local history. It does not upload job data,
+jobs, elapsed time, aggregate process-tree memory and CPU data, a live rolling
+output tail for active captured jobs, and recent local history. It does not upload job data,
 read browser history, or expose a network listener outside the current
 machine. The capability URL changes on each launch; use `--no-open` to print
 it without opening a browser, and `--history-limit N` to adjust the bounded
 history view.
 
 For live output in the dashboard, launch the job with `jort track --output`
-(or the corresponding project wrapper). New detached jobs persist a running
+(or the corresponding project wrapper). Jort keeps that dashboard tail separate
+from the bounded output archive used by e-mail attachments and `jort logs`; the
+dashboard therefore continues to show the latest output after an attachment cap
+is reached. When an active job emits recognized Siso/Ninja progress lines,
+Jort also shows a clearly labeled linear ETA. New detached jobs persist a running
 heartbeat while they execute, so their status is visible immediately rather
 than only after completion.

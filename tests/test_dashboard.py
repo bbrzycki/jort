@@ -74,11 +74,83 @@ class DashboardTests(unittest.TestCase):
 
             tail = dashboard.output_tail(live_job["job_id"])
             self.assertTrue(tail["available"])
+            self.assertEqual(tail["source"], "live")
             self.assertIn("first", tail["text"])
         finally:
             thread.join(timeout=5)
         self.assertFalse(thread.is_alive())
         self.assertEqual(result["payload"]["status"], "success")
+
+    def test_live_tail_bypasses_attachment_cap_and_exposes_build_estimate(self):
+        result = {}
+
+        def run_job():
+            result["payload"] = track_cli.track_new(
+                [
+                    sys.executable,
+                    "-c",
+                    (
+                        "import time; print('x' * 128, flush=True); time.sleep(.1); "
+                        "print('[20/100] 20.0s F CXX example.o', flush=True); time.sleep(.7)"
+                    ),
+                ],
+                to_db=True,
+                session_name="live-tail-test",
+                store_stdout=True,
+                max_output_bytes=32,
+                quiet=True,
+            )
+
+        thread = threading.Thread(target=run_job)
+        thread.start()
+        try:
+            deadline = time.monotonic() + 3
+            live_job = None
+            while time.monotonic() < deadline:
+                jobs = dashboard.snapshot()["active"]
+                candidate = next(
+                    (job for job in jobs if job["session_name"] == "live-tail-test"),
+                    None,
+                )
+                if candidate and candidate["progress"]:
+                    live_job = candidate
+                    break
+                time.sleep(0.02)
+
+            self.assertIsNotNone(live_job)
+            self.assertTrue(live_job["has_live_output"])
+            self.assertEqual(live_job["progress"]["completed"], 20)
+            self.assertEqual(live_job["progress"]["total"], 100)
+            self.assertAlmostEqual(live_job["progress"]["remaining_seconds"], 80.0)
+
+            tail = dashboard.output_tail(live_job["job_id"])
+            self.assertEqual(tail["source"], "live")
+            self.assertIn("[20/100] 20.0s", tail["text"])
+            self.assertNotIn("output truncated at configured limit", tail["text"])
+        finally:
+            thread.join(timeout=5)
+        self.assertFalse(thread.is_alive())
+
+        archived = dashboard.output_tail(result["payload"]["job_id"])
+        self.assertEqual(archived["source"], "captured")
+        self.assertIn("output truncated at configured limit", archived["text"])
+
+    def test_siso_progress_parser_rejects_terminal_or_unqualified_lines(self):
+        self.assertIsNone(dashboard._parse_siso_progress("[100/100] 12.0s LINK chrome"))
+        self.assertIsNone(dashboard._parse_siso_progress("20/100 in 20 seconds"))
+
+    def test_live_tail_writer_retains_recent_lines_without_attachment_marker(self):
+        path = os.path.join(self.temporary_directory.name, "live-tail.log")
+        writer = track_cli._LiveTailWriter(path, max_bytes=64, retain_bytes=32)
+        try:
+            writer.write("discarded\n" * 10)
+            writer.write("[9/10] 9.0s F CXX final.o\n")
+        finally:
+            writer.close()
+        with open(path, encoding="utf-8") as stream:
+            text = stream.read()
+        self.assertIn("[9/10] 9.0s", text)
+        self.assertNotIn("output truncated at configured limit", text)
 
     def test_detached_job_is_persisted_before_its_worker_starts(self):
         def launch_worker(*args, **kwargs):

@@ -68,7 +68,8 @@ def cli():
 @click.option("-d", "--database", is_flag=True, help="store job details in database")
 @click.option("-s", "--session", metavar="<session>", help="job session name for database")
 @click.option("-u", "--unique", is_flag=True, help="skip a previously successful matching job")
-@click.option("-o", "--output", is_flag=True, help="capture output for an email attachment")
+@click.option("-o", "--output", is_flag=True,
+              help="capture output for notifications and the live dashboard tail")
 @click.option("--max-output-bytes", type=click.IntRange(min=1), help="bound captured output size")
 @click.option("--timeout", "timeout_seconds", type=click.FloatRange(min=0.001),
               help="terminate the job after this many seconds")

@@ -3,6 +3,7 @@
 import hmac
 import json
 import os
+import re
 import secrets
 import threading
 import webbrowser
@@ -19,11 +20,21 @@ DEFAULT_HISTORY_LIMIT = 100
 MAX_HISTORY_LIMIT = 500
 MAX_TAIL_BYTES = 64 * 1024
 MAX_TAIL_LINES = 200
+MAX_PROGRESS_BYTES = 128 * 1024
+
+_ACTIVE_STATUSES = {"queued", "running"}
+_SISO_PROGRESS_LINE = re.compile(
+    r"^\[(?P<completed>\d+)\s*/\s*(?P<total>\d+)\]\s+"
+    r"(?:(?P<hours>\d+)h)?(?:(?P<minutes>\d+)m)?"
+    r"(?P<seconds>\d+(?:\.\d+)?)s\b",
+    re.MULTILINE,
+)
 
 
 def _public_job(payload):
     """Return the fields the local UI needs; no file paths or argv are exposed."""
     metrics = payload.get("metrics") or {}
+    progress = _progress_from_live_output(payload)
     return {
         "job_id": payload.get("job_id"),
         "name": payload.get("name"),
@@ -36,6 +47,8 @@ def _public_job(payload):
         "exit_code": payload.get("exit_code"),
         "error_message": payload.get("error_message"),
         "has_output": bool(payload.get("stdout_fn")),
+        "has_live_output": _live_tail_path(payload) is not None,
+        "progress": progress,
         "metrics": {
             "rss_bytes": metrics.get("rss_bytes") or 0,
             "peak_rss_bytes": metrics.get("peak_rss_bytes") or 0,
@@ -49,9 +62,8 @@ def _public_job(payload):
 def snapshot(history_limit=DEFAULT_HISTORY_LIMIT):
     """Return a bounded, redacted view of active jobs and recent history."""
     jobs = database.list_dashboard_jobs(limit=history_limit)
-    active_statuses = {"queued", "running"}
-    active = [_public_job(job) for job in jobs if job.get("status") in active_statuses]
-    history = [_public_job(job) for job in jobs if job.get("status") not in active_statuses]
+    active = [_public_job(job) for job in jobs if job.get("status") in _ACTIVE_STATUSES]
+    history = [_public_job(job) for job in jobs if job.get("status") not in _ACTIVE_STATUSES]
     return {
         "generated_at": datetime_utils.get_iso_date(),
         "active": active,
@@ -59,9 +71,8 @@ def snapshot(history_limit=DEFAULT_HISTORY_LIMIT):
     }
 
 
-def _tail_path(payload):
-    """Resolve only Jort-managed captured output files for dashboard reading."""
-    filename = payload.get("stdout_fn")
+def _managed_output_path(filename):
+    """Resolve a relative filename only when it stays inside Jort's data directory."""
     if not filename or os.path.isabs(filename):
         return None
     data_dir = os.path.realpath(config._get_data_dir())
@@ -71,27 +82,107 @@ def _tail_path(payload):
     return path
 
 
+def _tail_path(payload):
+    """Resolve the bounded archive used for email and the logs command."""
+    return _managed_output_path(payload.get("stdout_fn"))
+
+
+def _live_tail_path(payload):
+    """Resolve a temporary active-job tail without exposing its local path."""
+    metadata = payload.get("metadata") or {}
+    filename = metadata.get("live_output_fn")
+    if payload.get("status") not in _ACTIVE_STATUSES:
+        return None
+    return _managed_output_path(filename)
+
+
+def _read_tail(path, max_bytes):
+    """Read a bounded suffix without loading an entire local output file."""
+    with open(path, "rb") as stream:
+        stream.seek(0, os.SEEK_END)
+        size = stream.tell()
+        stream.seek(max(0, size - max_bytes), os.SEEK_SET)
+        return stream.read(max_bytes), size
+
+
+def _parse_siso_progress(text):
+    """Parse the last trustworthy Siso/Ninja-style progress line, if present."""
+    matches = list(_SISO_PROGRESS_LINE.finditer(text))
+    if not matches:
+        return None
+    match = matches[-1]
+    completed = int(match.group("completed"))
+    total = int(match.group("total"))
+    if completed <= 0 or total <= completed:
+        return None
+    elapsed_seconds = (
+        int(match.group("hours") or 0) * 3600
+        + int(match.group("minutes") or 0) * 60
+        + float(match.group("seconds"))
+    )
+    if elapsed_seconds <= 0:
+        return None
+    fraction = completed / total
+    progress = {
+        "completed": completed,
+        "total": total,
+        "fraction": fraction,
+        "elapsed_seconds": elapsed_seconds,
+    }
+    # A one-line linear extrapolation is intentionally withheld until the job has
+    # made enough observable progress to avoid presenting a spurious ETA.
+    if fraction >= 0.01 and elapsed_seconds >= 10:
+        progress["remaining_seconds"] = elapsed_seconds * (total - completed) / completed
+    return progress
+
+
+def _progress_from_live_output(payload):
+    """Derive an explicitly approximate progress snapshot from an active live tail."""
+    path = _live_tail_path(payload)
+    if path is None:
+        return None
+    try:
+        data, _ = _read_tail(path, MAX_PROGRESS_BYTES)
+    except FileNotFoundError:
+        return None
+    return _parse_siso_progress(data.decode("utf-8", errors="replace"))
+
+
 def output_tail(job_id, max_bytes=MAX_TAIL_BYTES, max_lines=MAX_TAIL_LINES):
-    """Return a bounded, end-of-file output tail for a tracked job."""
+    """Return a bounded end-of-file tail, preferring active live output."""
     payload = database.get_job(job_id)
     if payload is None:
         return None
-    path = _tail_path(payload)
+    path = _live_tail_path(payload)
+    source = "live" if path is not None else "captured"
+    if path is None:
+        path = _tail_path(payload)
     if path is None:
         return {"available": False, "text": "No captured output is available for this job."}
     try:
-        with open(path, "rb") as stream:
-            stream.seek(0, os.SEEK_END)
-            size = stream.tell()
-            stream.seek(max(0, size - max_bytes), os.SEEK_SET)
-            data = stream.read(max_bytes)
+        data, size = _read_tail(path, max_bytes)
     except FileNotFoundError:
-        return {"available": False, "text": "Captured output has not been written yet."}
+        if source == "live":
+            archive = _tail_path(payload)
+            if archive is not None:
+                path = archive
+                source = "captured"
+                try:
+                    data, size = _read_tail(path, max_bytes)
+                except FileNotFoundError:
+                    return {"available": False, "text": "Captured output has not been written yet."}
+            else:
+                return {"available": False, "text": "Live output has not been written yet."}
+        else:
+            return {"available": False, "text": "Captured output has not been written yet."}
     text = data.decode("utf-8", errors="replace")
     lines = text.splitlines()
-    if size > max_bytes:
-        lines.insert(0, "[jort] showing the most recent output only")
-    return {"available": True, "text": "\n".join(lines[-max_lines:])}
+    return {
+        "available": True,
+        "source": source,
+        "truncated": size > max_bytes or len(lines) > max_lines,
+        "text": "\n".join(lines[-max_lines:]),
+    }
 
 
 def _dashboard_html(token, nonce):
@@ -116,7 +207,7 @@ def _dashboard_html(token, nonce):
     main { max-width:1440px; margin:0 auto; padding:30px 28px 44px; }
     .page-heading { display:flex; align-items:flex-end; justify-content:space-between; gap:24px; margin-bottom:20px; } h1 { margin:0; font-size:22px; line-height:1.15; letter-spacing:-.025em; font-weight:650; } .subheading { color:var(--muted); margin:5px 0 0; }
     .refresh-meta { display:flex; align-items:center; gap:12px; color:var(--muted); font-size:12px; white-space:nowrap; } .quiet-button { appearance:none; border:1px solid var(--line-strong); border-radius:6px; background:transparent; padding:6px 9px; cursor:pointer; } .quiet-button:hover { border-color:var(--focus); color:#fff; }
-    .summary { display:flex; border:1px solid var(--line); border-radius:8px; background:var(--panel); margin-bottom:20px; overflow:hidden; } .metric { min-width:116px; padding:12px 16px; border-right:1px solid var(--line); } .metric:last-child { border-right:0; } .metric-value { display:block; font-size:18px; line-height:1.1; font-weight:640; font-variant-numeric:tabular-nums; } .metric-label { display:block; margin-top:4px; color:var(--muted); font-size:11px; letter-spacing:.045em; text-transform:uppercase; }
+    .summary { display:flex; border:1px solid var(--line); border-radius:8px; background:var(--panel); margin-bottom:20px; overflow:hidden; } .metric { min-width:116px; padding:12px 16px; border-right:1px solid var(--line); } .metric-progress { min-width:184px; } .metric:last-child { border-right:0; } .metric-value { display:block; font-size:18px; line-height:1.1; font-weight:640; font-variant-numeric:tabular-nums; } .metric-label { display:block; margin-top:4px; color:var(--muted); font-size:11px; letter-spacing:.045em; text-transform:uppercase; }
     .monitor-grid { display:grid; grid-template-columns:minmax(0,1.7fr) minmax(340px,.9fr); gap:16px; align-items:stretch; } .panel { border:1px solid var(--line); border-radius:8px; background:var(--panel); overflow:hidden; } .panel-head { height:48px; display:flex; justify-content:space-between; align-items:center; padding:0 16px; border-bottom:1px solid var(--line); } .panel-title { font-size:13px; font-weight:640; } .panel-detail { color:var(--muted); font-size:12px; }
     .job-list { min-height:202px; } .job-row { width:100%; display:grid; grid-template-columns:12px minmax(0,1fr) auto auto; gap:12px; align-items:center; padding:13px 16px; border:0; border-bottom:1px solid var(--line); background:transparent; text-align:left; cursor:pointer; } .job-row:last-child { border-bottom:0; } .job-row:hover { background:var(--panel-raised); } .job-row.is-selected { box-shadow:inset 2px 0 0 var(--focus); background:#1d232d; } .job-row:focus-visible,.history-command:focus-visible,.quiet-button:focus-visible,input:focus-visible { outline:2px solid var(--focus); outline-offset:-2px; }
     .status-dot { width:8px; height:8px; border-radius:50%; background:var(--faint); } .status-dot.running { background:var(--success); box-shadow:0 0 0 3px #20382a; } .status-dot.queued { background:var(--warning); } .status-dot.error,.status-dot.terminated,.status-dot.timeout { background:var(--danger); } .status-dot.success { background:var(--success); }
@@ -141,7 +232,7 @@ def _dashboard_html(token, nonce):
     <section class="summary" aria-label="Job summary" id="summary"></section>
     <div class="monitor-grid">
       <section class="panel" aria-labelledby="active-heading"><div class="panel-head"><span class="panel-title" id="active-heading">Active jobs</span><span class="panel-detail" id="active-count"></span></div><div class="job-list" id="active"></div></section>
-      <aside class="panel inspector" aria-labelledby="inspector-heading"><div class="panel-head"><span class="panel-title" id="inspector-heading">Output inspector</span><span class="panel-detail">Last 200 lines</span></div><div class="inspector-meta" id="inspector-meta"></div><pre class="output output-empty" id="output">Select a job to inspect its captured output.</pre></aside>
+      <aside class="panel inspector" aria-labelledby="inspector-heading"><div class="panel-head"><span class="panel-title" id="inspector-heading">Output inspector</span><span class="panel-detail" id="output-kind">Last 200 lines</span></div><div class="inspector-meta" id="inspector-meta"></div><pre class="output output-empty" id="output">Select a job to inspect its captured output.</pre></aside>
     </div>
     <section class="panel history-panel" aria-labelledby="history-heading"><div class="panel-head"><span class="panel-title" id="history-heading">Recent history</span><div class="history-toolbar"><input id="filter" type="search" placeholder="Filter jobs or sessions" aria-label="Filter job history"></div></div><div class="history-wrap"><table><thead><tr><th>Status</th><th>Command</th><th>Session</th><th>Runtime</th><th>Completed</th></tr></thead><tbody id="history"></tbody></table></div></section>
   </main>
@@ -158,14 +249,16 @@ def _dashboard_html(token, nonce):
     const statusLabel = status => ({running:'Running',queued:'Queued',success:'Completed',error:'Failed',terminated:'Terminated',timeout:'Timed out'}[status] || status);
     const allJobs = () => [...latest.active, ...latest.history];
     const selectedJob = () => allJobs().find(job => job.job_id === selectedJobId);
-    const resourceSummary = job => { const m=job.metrics||{}; const cpu=(m.cpu_user_seconds||0)+(m.cpu_system_seconds||0); return `CPU ${fmtSeconds(cpu)} · ${fmtBytes(m.rss_bytes)} memory${m.child_process_count ? ` · ${m.child_process_count} child` : ''}`; };
+    const progressLabel = job => { const p=job.progress; if(!p)return null; const percent=`${(p.fraction*100).toFixed(p.fraction<.1?1:0)}%`; return p.remaining_seconds==null ? `${percent} · estimating` : `${percent} · ~${fmtSeconds(p.remaining_seconds)} remaining`; };
+    const progressDetail = job => { const p=job.progress; if(!p)return null; const estimate=p.remaining_seconds==null ? 'estimating from build output' : `~${fmtSeconds(p.remaining_seconds)} remaining`; return `${p.completed.toLocaleString()} / ${p.total.toLocaleString()} · ${estimate}`; };
+    const resourceSummary = job => { const m=job.metrics||{}; const cpu=(m.cpu_user_seconds||0)+(m.cpu_system_seconds||0); const progress=progressLabel(job); return `${progress ? `${progress} · ` : ''}CPU ${fmtSeconds(cpu)} · ${fmtBytes(m.rss_bytes)} memory${m.child_process_count ? ` · ${m.child_process_count} child` : ''}`; };
     const row = job => `<button type="button" class="job-row ${job.job_id===selectedJobId?'is-selected':''}" data-job-id="${escape(job.job_id)}"><span class="status-dot ${escape(job.status)}" aria-hidden="true"></span><span><span class="job-name" title="${escape(job.name)}">${escape(job.name)}</span><span class="job-context"><span>${escape(job.session_name||'Uncategorized')}</span><span>${escape(statusLabel(job.status))}</span></span></span><span class="job-stat">${escape(resourceSummary(job))}</span><span class="job-runtime">${fmtSeconds(job.runtime)}</span></button>`;
-    function renderSummary() { const running=latest.active.filter(job=>job.status==='running').length, queued=latest.active.filter(job=>job.status==='queued').length, failed=latest.history.filter(job=>['error','terminated','timeout'].includes(job.status)).length; document.getElementById('summary').innerHTML=`<div class="metric"><span class="metric-value">${latest.active.length}</span><span class="metric-label">Active</span></div><div class="metric"><span class="metric-value">${running}</span><span class="metric-label">Running</span></div><div class="metric"><span class="metric-value">${queued}</span><span class="metric-label">Queued</span></div><div class="metric"><span class="metric-value">${failed}</span><span class="metric-label">Recent failures</span></div>`; }
+    function renderSummary() { const running=latest.active.filter(job=>job.status==='running').length, queued=latest.active.filter(job=>job.status==='queued').length, failed=latest.history.filter(job=>['error','terminated','timeout'].includes(job.status)).length, selected=selectedJob(), progress=selected&&progressLabel(selected); document.getElementById('summary').innerHTML=`<div class="metric"><span class="metric-value">${latest.active.length}</span><span class="metric-label">Active</span></div><div class="metric"><span class="metric-value">${running}</span><span class="metric-label">Running</span></div><div class="metric"><span class="metric-value">${queued}</span><span class="metric-label">Queued</span></div><div class="metric metric-progress"><span class="metric-value">${progress||'—'}</span><span class="metric-label">Selected-job estimate</span></div><div class="metric"><span class="metric-value">${failed}</span><span class="metric-label">Recent failures</span></div>`; }
     function renderActive() { const active=document.getElementById('active'); active.innerHTML=latest.active.length ? latest.active.map(row).join('') : '<div class="empty">No tracked jobs are currently active.</div>'; document.getElementById('active-count').textContent=latest.active.length ? `${latest.active.length} live` : 'Idle'; }
     function renderHistory() { const query=document.getElementById('filter').value.trim().toLowerCase(); const jobs=latest.history.filter(job=>!query||`${job.name} ${job.session_name||''}`.toLowerCase().includes(query)); document.getElementById('history').innerHTML=jobs.length ? jobs.map(job=>`<tr><td><span class="state"><span class="status-dot ${escape(job.status)}" aria-hidden="true"></span>${escape(statusLabel(job.status))}</span></td><td class="command"><button type="button" class="history-command" data-job-id="${escape(job.job_id)}" title="${escape(job.name)}">${escape(job.name)}</button></td><td>${escape(job.session_name||'—')}</td><td class="runtime">${fmtSeconds(job.runtime)}</td><td class="finished">${escape((job.date_modified||'').replace('T',' ').replace(/\\+.*/,''))}</td></tr>`).join('') : '<tr><td colspan="5" class="empty">No jobs match this filter.</td></tr>'; }
-    function renderInspector() { const job=selectedJob(); const meta=document.getElementById('inspector-meta'), output=document.getElementById('output'); if(!job){meta.innerHTML='<div class="inspector-name">No job selected</div><div class="inspector-summary"><span>Select an active or historical job.</span></div>'; output.textContent='Select a job to inspect its captured output.'; output.classList.add('output-empty'); return;} meta.innerHTML=`<div class="inspector-name" title="${escape(job.name)}">${escape(job.name)}</div><div class="inspector-summary"><span>${escape(statusLabel(job.status))}</span><span>${fmtSeconds(job.runtime)}</span><span>${escape(job.session_name||'Uncategorized')}</span></div>`; if(!job.has_output){output.textContent='This job was not started with captured output.'; output.classList.add('output-empty');} else if(loadedOutputFor!==job.job_id){output.textContent='Loading captured output…'; output.classList.remove('output-empty');} }
+    function renderInspector() { const job=selectedJob(), kind=document.getElementById('output-kind'); const meta=document.getElementById('inspector-meta'), output=document.getElementById('output'); if(!job){kind.textContent='Last 200 lines'; meta.innerHTML='<div class="inspector-name">No job selected</div><div class="inspector-summary"><span>Select an active or historical job.</span></div>'; output.textContent='Select a job to inspect its captured output.'; output.classList.add('output-empty'); return;} const detail=progressDetail(job); kind.textContent=job.has_live_output?'Live tail · last 200 lines':'Captured output · last 200 lines'; meta.innerHTML=`<div class="inspector-name" title="${escape(job.name)}">${escape(job.name)}</div><div class="inspector-summary"><span>${escape(statusLabel(job.status))}</span><span>${fmtSeconds(job.runtime)}</span><span>${escape(job.session_name||'Uncategorized')}</span>${detail?`<span>${escape(detail)}</span>`:''}</div>`; if(!job.has_output){output.textContent='This job was not started with captured output.'; output.classList.add('output-empty');} else if(loadedOutputFor!==job.job_id){output.textContent=job.has_live_output?'Loading live output…':'Loading captured output…'; output.classList.remove('output-empty');} }
     function render() { renderSummary(); renderActive(); renderHistory(); renderInspector(); }
-    async function loadOutput(jobId, quiet=false) { const job=allJobs().find(item=>item.job_id===jobId); const output=document.getElementById('output'); if(!job||!job.has_output||outputRequestFor===jobId){return;} outputRequestFor=jobId; if(!quiet){output.textContent='Loading captured output…'; output.classList.remove('output-empty');} try { const response=await fetch(api(`/api/jobs/${encodeURIComponent(jobId)}/tail`),{cache:'no-store'}); const body=await response.json(); if(selectedJobId!==jobId)return; loadedOutputFor=jobId; output.textContent=body.text||'No captured output is available.'; output.classList.toggle('output-empty',!body.available); } catch(error) { if(selectedJobId===jobId){output.textContent='Unable to read captured output.'; output.classList.add('output-empty');} } finally { if(outputRequestFor===jobId)outputRequestFor=null; } }
+    async function loadOutput(jobId, quiet=false) { const job=allJobs().find(item=>item.job_id===jobId); const output=document.getElementById('output'), kind=document.getElementById('output-kind'); if(!job||!job.has_output||outputRequestFor===jobId){return;} outputRequestFor=jobId; if(!quiet){output.textContent=job.has_live_output?'Loading live output…':'Loading captured output…'; output.classList.remove('output-empty');} try { const response=await fetch(api(`/api/jobs/${encodeURIComponent(jobId)}/tail`),{cache:'no-store'}); const body=await response.json(); if(selectedJobId!==jobId)return; loadedOutputFor=jobId; kind.textContent=body.source==='live'?'Live tail · last 200 lines':'Captured output · last 200 lines'; output.textContent=body.text||'No captured output is available.'; output.classList.toggle('output-empty',!body.available); } catch(error) { if(selectedJobId===jobId){output.textContent='Unable to read captured output.'; output.classList.add('output-empty');} } finally { if(outputRequestFor===jobId)outputRequestFor=null; } }
     function selectJob(jobId) { selectedJobId=jobId; loadedOutputFor=null; render(); loadOutput(jobId); }
     async function refresh() { try { const response=await fetch(api('/api/status'),{cache:'no-store'}); if(!response.ok)throw new Error('status unavailable'); latest=await response.json(); if(!selectedJob()&&latest.active.length){selectedJobId=latest.active[0].job_id; loadedOutputFor=null;} render(); const current=selectedJob(); if(current&&current.has_output&&['running','queued'].includes(current.status)){loadOutput(current.job_id,true);} else if(current&&current.has_output&&loadedOutputFor!==current.job_id){loadOutput(current.job_id);} document.getElementById('updated').textContent=`Updated ${new Date().toLocaleTimeString()}`; } catch(error) { document.getElementById('updated').textContent='Connection lost — retrying'; } }
     document.addEventListener('click',event=>{const target=event.target.closest('[data-job-id]'); if(target)selectJob(target.dataset.jobId);}); document.getElementById('filter').addEventListener('input',renderHistory); document.getElementById('refresh').addEventListener('click',refresh); refresh(); setInterval(refresh,1000);

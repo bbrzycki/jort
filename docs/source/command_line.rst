@@ -75,11 +75,14 @@ without rendering a build's full output in an editor terminal:
 
 The command starts a loopback-only server, opens a browser, and prints its
 local capability URL. It refreshes active job state once per second and shows
-captured output only as a bounded tail when selected. It never uploads job
+active captured jobs through a rolling local tail when selected. It never uploads job
 data. Use :code:`--no-open` to suppress browser launch, :code:`--port` to
 choose a local port, and :code:`--history-limit` to bound the history view.
 
-For a job's output to be available live, launch it with :code:`jort track
---output`; output is line-buffered and capped by :code:`--max-output-bytes`.
-Detached jobs write a durable running heartbeat while executing, including
+For a job's output to be available live, launch it with :code:`jort track --output`.
+The rolling dashboard tail is independent from the bounded archive
+used for e-mail attachments and :code:`jort logs`, so an attachment cap does
+not suppress the latest dashboard output. Recognized Siso/Ninja progress lines
+receive a clearly labeled linear ETA; other commands show no estimate. Detached
+jobs write a durable running heartbeat while executing, including
 aggregate process-tree memory and CPU metrics.

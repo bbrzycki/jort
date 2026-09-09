@@ -82,22 +82,9 @@ class Tracker(object):
         Manage session name and id. If session name is provided, get the id from database.
         """
         try:
-            database.ensure_database()
-            with contextlib.closing(sqlite3.connect(config._get_database_path())) as con:
-                cur = con.cursor()
-                if self.session_name is not None:
-                    sql = "SELECT session_id FROM sessions WHERE session_name = ?"
-                    res = cur.execute(sql, (self.session_name,))
-                    row = res.fetchone()
-                    if row is not None:
-                        self.session_id = row[0]
-                else:
-                    self.session_name = self.session_id
-                    sql = (
-                        "INSERT INTO sessions VALUES(?, ?)"
-                    )
-                    cur.execute(sql, (self.session_id, self.session_name))
-                    con.commit()
+            self.session_id, self.session_name = database.get_or_create_session(
+                self.session_name, self.session_id
+            )
             self.session_configured = True
         except sqlite3.OperationalError as e:
             raise exceptions.JortException("Missing database - make sure to initialize with `jort.init()` or `jort init`") from e

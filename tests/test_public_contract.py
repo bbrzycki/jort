@@ -82,6 +82,22 @@ class PublicApiContractTests(unittest.TestCase):
             verbose=False,
         )
 
+    def test_dashboard_cli_uses_loopback_server_without_forcing_browser_open(self):
+        runner = CliRunner()
+        with patch("jort.dashboard.serve") as serve:
+            result = runner.invoke(
+                jort_exe.cli,
+                ["dashboard", "--port", "43123", "--history-limit", "25", "--no-open"],
+            )
+
+        self.assertEqual(result.exit_code, 0, result.output)
+        serve.assert_called_once_with(
+            host="127.0.0.1",
+            port=43123,
+            history_limit=25,
+            open_browser=False,
+        )
+
 
 if __name__ == "__main__":
     unittest.main()

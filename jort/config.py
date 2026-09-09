@@ -338,6 +338,7 @@ def _initialize_db():
             "    command_hash TEXT,"
             "    notification_channels_json TEXT,"
             "    notifications_json TEXT,"
+            "    metrics_json TEXT,"
             "    FOREIGN KEY(session_id) REFERENCES sessions(session_id)"
             ")"
         )
@@ -357,6 +358,7 @@ def _initialize_db():
             "command_hash": "TEXT",
             "notification_channels_json": "TEXT",
             "notifications_json": "TEXT",
+            "metrics_json": "TEXT",
         }
         for column, data_type in migrations.items():
             if column not in existing_columns:
@@ -384,6 +386,6 @@ def _initialize_db():
             "    FOREIGN KEY(job_id) REFERENCES jobs(job_id)"
             ")"
         )
-        cur.execute("PRAGMA user_version = 2")
+        cur.execute("PRAGMA user_version = 3")
 
         con.commit()

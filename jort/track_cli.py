@@ -124,13 +124,28 @@ def _capture_line(stream, line, output_limit, state):
 
 
 def _process_metrics(process, peak_rss=0):
-    metrics = {"peak_rss_bytes": peak_rss or None}
+    """Collect aggregate resource use for a tracked process and its children."""
+    metrics = {
+        "rss_bytes": 0,
+        "peak_rss_bytes": peak_rss or 0,
+        "cpu_user_seconds": 0.0,
+        "cpu_system_seconds": 0.0,
+        "child_process_count": 0,
+    }
     try:
-        cpu = process.cpu_times()
-        metrics["cpu_user_seconds"] = cpu.user
-        metrics["cpu_system_seconds"] = cpu.system
+        processes = [process, *process.children(recursive=True)]
     except (psutil.NoSuchProcess, psutil.AccessDenied):
-        pass
+        processes = [process]
+    metrics["child_process_count"] = max(0, len(processes) - 1)
+    for candidate in processes:
+        try:
+            metrics["rss_bytes"] += candidate.memory_info().rss
+            cpu = candidate.cpu_times()
+            metrics["cpu_user_seconds"] += cpu.user
+            metrics["cpu_system_seconds"] += cpu.system
+        except (psutil.NoSuchProcess, psutil.AccessDenied):
+            continue
+    metrics["peak_rss_bytes"] = max(peak_rss, metrics["rss_bytes"])
     return metrics
 
 
@@ -252,21 +267,39 @@ def track_new(command,
         if not quiet:
             print(f"Subprocess PID: {process.pid}\n")
 
+        if persist:
+            database.save_job(payload)
+
         def sample_metrics():
             while not metric_stop.is_set():
-                try:
-                    metric_state["peak_rss"] = max(
-                        metric_state["peak_rss"], process.memory_info().rss
-                    )
-                except (psutil.NoSuchProcess, psutil.AccessDenied):
-                    return
-                metric_stop.wait(0.1)
+                metrics = _process_metrics(process, metric_state["peak_rss"])
+                metric_state["peak_rss"] = metrics["peak_rss_bytes"]
+                if persist:
+                    now = datetime_utils.get_iso_date()
+                    try:
+                        database.update_live_job(
+                            payload["job_id"],
+                            pid=process.pid,
+                            runtime=datetime_utils.get_runtime(payload["date_created"], now),
+                            metrics=metrics,
+                            date_modified=now,
+                        )
+                    except (OSError, sqlite3.Error):
+                        # Monitoring must never affect the child command's lifecycle.
+                        pass
+                metric_stop.wait(1.0)
 
         metric_thread = threading.Thread(target=sample_metrics, daemon=True)
         metric_thread.start()
 
         if stdout_path is not None:
-            output_stream = open(stdout_path, "w", encoding="utf-8", errors="replace")
+            output_stream = open(
+                stdout_path,
+                "w",
+                encoding="utf-8",
+                errors="replace",
+                buffering=1,
+            )
             output_stream.write(f"{command}\n----\n")
 
         timed_out = threading.Event()
@@ -282,12 +315,6 @@ def track_new(command,
         temp_start = time.monotonic()
         buffer = ""
         for line in process.stdout:
-            try:
-                metric_state["peak_rss"] = max(
-                    metric_state["peak_rss"], process.memory_info().rss
-                )
-            except (psutil.NoSuchProcess, psutil.AccessDenied):
-                pass
             if update_period > 0 and time.monotonic() - temp_start >= update_period:
                 payload["status"] = "running"
                 datetime_utils._update_payload_times(payload)

@@ -133,7 +133,13 @@ class DashboardTests(unittest.TestCase):
 
         archived = dashboard.output_tail(result["payload"]["job_id"])
         self.assertEqual(archived["source"], "captured")
-        self.assertIn("output truncated at configured limit", archived["text"])
+        self.assertTrue(archived["capture_limited"])
+        self.assertNotIn("output truncated at configured limit", archived["text"])
+        archive_path = os.path.join(
+            self.temporary_directory.name, result["payload"]["stdout_fn"]
+        )
+        with open(archive_path, encoding="utf-8") as stream:
+            self.assertIn("output truncated at configured limit", stream.read())
 
     def test_siso_progress_parser_rejects_terminal_or_unqualified_lines(self):
         self.assertIsNone(dashboard._parse_siso_progress("[100/100] 12.0s LINK chrome"))

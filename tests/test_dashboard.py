@@ -126,7 +126,7 @@ class DashboardTests(unittest.TestCase):
                 self.assertEqual(response.status, 200)
                 self.assertNotIn("unsafe-inline", response.headers["Content-Security-Policy"])
                 html = response.read().decode("utf-8")
-            self.assertIn("data-output-job", html)
+            self.assertIn("data-job-id", html)
             self.assertNotIn("onclick=", html)
             with urlopen(url.replace("/?token=test-token", "/api/status?token=test-token"), timeout=2) as response:
                 body = json.loads(response.read())

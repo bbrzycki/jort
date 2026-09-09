@@ -62,3 +62,27 @@ You can also track an existing process using its integer process ID:
 Similarly, add the :code:`-e` or :code:`-t` flags for either e-mail or SMS notification
 on completion, and :code:`-d` and :code:`-s` flags for saving info to database. Note 
 that since :code:`jort` was not the parent process, it can't save output or flag errors.
+
+Local monitoring dashboard
+--------------------------
+
+Use the local dashboard for a concise view of active jobs and recent history
+without rendering a build's full output in an editor terminal:
+
+.. code-block:: bash
+
+    jort dashboard
+
+The command starts a loopback-only server, opens a browser, and prints its
+local capability URL. It refreshes active job state once per second and shows
+active captured jobs through a rolling local tail when selected. It never uploads job
+data. Use :code:`--no-open` to suppress browser launch, :code:`--port` to
+choose a local port, and :code:`--history-limit` to bound the history view.
+
+For a job's output to be available live, launch it with :code:`jort track --output`.
+The rolling dashboard tail is independent from the bounded archive
+used for e-mail attachments and :code:`jort logs`, so an attachment cap does
+not suppress the latest dashboard output. Recognized Siso/Ninja progress lines
+receive a clearly labeled linear ETA; other commands show no estimate. Detached
+jobs write a durable running heartbeat while executing, including
+aggregate process-tree memory and CPU metrics.

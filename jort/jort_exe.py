@@ -68,7 +68,8 @@ def cli():
 @click.option("-d", "--database", is_flag=True, help="store job details in database")
 @click.option("-s", "--session", metavar="<session>", help="job session name for database")
 @click.option("-u", "--unique", is_flag=True, help="skip a previously successful matching job")
-@click.option("-o", "--output", is_flag=True, help="capture output for an email attachment")
+@click.option("-o", "--output", is_flag=True,
+              help="capture output for notifications and the live dashboard tail")
 @click.option("--max-output-bytes", type=click.IntRange(min=1), help="bound captured output size")
 @click.option("--timeout", "timeout_seconds", type=click.FloatRange(min=0.001),
               help="terminate the job after this many seconds")
@@ -375,6 +376,29 @@ def notify_pending(as_json):
         click.echo(json.dumps(pending, indent=2, default=str))
 
 
+@click.command()
+@click.option("--host", default="127.0.0.1", show_default=True,
+              help="loopback address for the local dashboard")
+@click.option("--port", default=0, type=click.IntRange(min=0, max=65535),
+              show_default=True, help="local port; 0 chooses an available port")
+@click.option("--history-limit", default=100,
+              type=click.IntRange(min=1, max=500), show_default=True)
+@click.option("--no-open", is_flag=True,
+              help="print the local dashboard URL without opening a browser")
+def dashboard(host, port, history_limit, no_open):
+    """Open a local monitor for active Jort jobs and recent history."""
+    from . import dashboard as dashboard_module
+    try:
+        dashboard_module.serve(
+            host=host,
+            port=port,
+            history_limit=history_limit,
+            open_browser=not no_open,
+        )
+    except ValueError as error:
+        raise click.ClickException(str(error)) from error
+
+
 cli.add_command(config.init)
 cli.add_command(config.config_group)
 cli.add_command(track)
@@ -385,6 +409,7 @@ cli.add_command(database.inspect)
 cli.add_command(database.status)
 cli.add_command(database.logs)
 cli.add_command(cancel)
+cli.add_command(dashboard)
 
 
 if __name__ == "__main__":

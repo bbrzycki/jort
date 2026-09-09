@@ -4,6 +4,7 @@ import contextlib
 import json
 import os
 import sqlite3
+import threading
 import uuid
 
 import click
@@ -17,8 +18,12 @@ JOB_COLUMNS = (
     "date_created", "date_finished", "runtime", "stdout_fn",
     "error_message", "pid", "exit_code", "signal", "cwd", "argv_json",
     "git_sha", "metadata_json", "command_hash",
-    "notification_channels_json", "notifications_json",
+    "notification_channels_json", "notifications_json", "metrics_json",
 )
+
+
+_INITIALIZED_DATABASE_PATHS = set()
+_INITIALIZATION_LOCK = threading.Lock()
 
 
 def _connect():
@@ -32,7 +37,13 @@ def ensure_database():
     config.init_internal_config()
     data_dir = config._get_data_dir()
     config.Path(data_dir).mkdir(mode=0o700, parents=True, exist_ok=True)
-    config._initialize_db()
+    database_path = config._get_database_path()
+    if database_path in _INITIALIZED_DATABASE_PATHS:
+        return
+    with _INITIALIZATION_LOCK:
+        if database_path not in _INITIALIZED_DATABASE_PATHS:
+            config._initialize_db()
+            _INITIALIZED_DATABASE_PATHS.add(database_path)
 
 
 def _json(value):
@@ -63,6 +74,7 @@ def save_job(payload):
         "command_hash": payload.get("command_hash"),
         "notification_channels_json": _json(payload.get("notification_channels", [])),
         "notifications_json": _json(payload.get("notifications", {})),
+        "metrics_json": _json(payload.get("metrics", {})),
     }
     placeholders = ", ".join(f":{column}" for column in JOB_COLUMNS)
     columns = ", ".join(JOB_COLUMNS)
@@ -89,6 +101,7 @@ def _decode_job(row):
         ("metadata_json", "metadata"),
         ("notification_channels_json", "notification_channels"),
         ("notifications_json", "notifications"),
+        ("metrics_json", "metrics"),
     ):
         value = payload.pop(column, None)
         try:
@@ -97,6 +110,41 @@ def _decode_job(row):
         except json.JSONDecodeError:
             payload[target] = [] if target in ("argv", "notification_channels") else {}
     return payload
+
+
+def get_or_create_session(session_name=None, session_id=None):
+    """Return a stable local session ID, creating the named session if needed."""
+    ensure_database()
+    session_id = session_id or uuid.uuid4().hex
+    session_name = session_name or session_id
+    with contextlib.closing(_connect()) as connection:
+        connection.execute("BEGIN IMMEDIATE")
+        existing = connection.execute(
+            "SELECT session_id FROM sessions WHERE session_name = ? "
+            "ORDER BY rowid LIMIT 1",
+            (session_name,),
+        ).fetchone()
+        if existing is not None:
+            connection.commit()
+            return existing[0], session_name
+        connection.execute(
+            "INSERT INTO sessions(session_id, session_name) VALUES(?, ?)",
+            (session_id, session_name),
+        )
+        connection.commit()
+    return session_id, session_name
+
+
+def update_live_job(job_id, *, pid, runtime, metrics, date_modified):
+    """Persist a lightweight heartbeat for a running tracked process."""
+    ensure_database()
+    with contextlib.closing(_connect()) as connection:
+        connection.execute(
+            "UPDATE jobs SET status = 'running', pid = ?, runtime = ?, "
+            "date_finished = ?, metrics_json = ? WHERE job_id = ?",
+            (pid, runtime, date_modified, _json(metrics), job_id),
+        )
+        connection.commit()
 
 
 def get_job(job_id):
@@ -111,15 +159,14 @@ def get_job(job_id):
 def list_jobs(session=None, tail=None, full_details=False):
     ensure_database()
     if full_details:
-        sql = "SELECT jobs.* FROM jobs"
-        if session is not None:
-            sql += " JOIN sessions ON jobs.session_id = sessions.session_id"
+        sql = "SELECT jobs.*, sessions.session_name FROM jobs " \
+              "LEFT JOIN sessions ON jobs.session_id = sessions.session_id"
     else:
         sql = (
             "SELECT jobs.job_id, jobs.job_name, sessions.session_name, jobs.status, "
             "jobs.machine, jobs.date_created, jobs.date_finished, jobs.runtime, "
             "jobs.pid, jobs.exit_code, jobs.error_message "
-            "FROM jobs JOIN sessions ON jobs.session_id = sessions.session_id"
+            "FROM jobs LEFT JOIN sessions ON jobs.session_id = sessions.session_id"
         )
     params = []
     if session is not None:
@@ -134,6 +181,19 @@ def list_jobs(session=None, tail=None, full_details=False):
     if tail is not None:
         rows = rows[-tail:] if tail > 0 else []
     return rows
+
+
+def list_dashboard_jobs(limit=100):
+    """Return recent jobs, including active detached jobs without hiding them."""
+    ensure_database()
+    with contextlib.closing(_connect()) as connection:
+        rows = connection.execute(
+            "SELECT jobs.*, sessions.session_name FROM jobs "
+            "LEFT JOIN sessions ON jobs.session_id = sessions.session_id "
+            "ORDER BY jobs.date_created DESC LIMIT ?",
+            (limit,),
+        ).fetchall()
+    return [_decode_job(row) for row in rows]
 
 
 def print_jobs(session=None, tail=None, full_details=False):

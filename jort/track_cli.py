@@ -9,6 +9,7 @@ import shutil
 import sqlite3
 import subprocess
 import sys
+import tempfile
 import threading
 import time
 
@@ -21,6 +22,11 @@ from . import datetime_utils
 from . import exceptions
 from . import reporting_callbacks
 from . import tracker
+
+
+LIVE_TAIL_DIRECTORY = "live-tails"
+LIVE_TAIL_MAX_BYTES = 4 * 1024 * 1024
+LIVE_TAIL_RETAIN_BYTES = 3 * 1024 * 1024
 
 
 def _notification_callbacks(send_text=False, send_email=False, include_print=True):
@@ -123,14 +129,102 @@ def _capture_line(stream, line, output_limit, state):
         state["truncated"] = True
 
 
-def _process_metrics(process, peak_rss=0):
-    metrics = {"peak_rss_bytes": peak_rss or None}
+def _live_tail_path(job_id):
+    """Return a private, Jort-managed path for one active dashboard tail."""
+    directory = os.path.join(config._get_data_dir(), LIVE_TAIL_DIRECTORY)
+    os.makedirs(directory, mode=0o700, exist_ok=True)
+    return os.path.join(directory, f"{job_id}.log")
+
+
+class _LiveTailWriter:
+    """Keep a rolling, line-oriented local tail independent of email capture."""
+
+    def __init__(self, path, max_bytes=LIVE_TAIL_MAX_BYTES,
+                 retain_bytes=LIVE_TAIL_RETAIN_BYTES):
+        if retain_bytes <= 0 or retain_bytes >= max_bytes:
+            raise ValueError("retain_bytes must be positive and smaller than max_bytes")
+        self.path = path
+        self.max_bytes = max_bytes
+        self.retain_bytes = retain_bytes
+        self.bytes_written = 0
+        self.stream = open(path, "w", encoding="utf-8", errors="replace", buffering=1)
+
+    def write(self, text):
+        self.stream.write(text)
+        self.stream.flush()
+        self.bytes_written += len(text.encode("utf-8", errors="replace"))
+        if self.bytes_written > self.max_bytes:
+            self._roll()
+
+    def _roll(self):
+        self.stream.close()
+        with open(self.path, "rb") as source:
+            source.seek(0, os.SEEK_END)
+            size = source.tell()
+            source.seek(max(0, size - self.retain_bytes), os.SEEK_SET)
+            data = source.read(self.retain_bytes)
+        if size > self.retain_bytes:
+            newline = data.find(b"\n")
+            if newline >= 0:
+                data = data[newline + 1:]
+        descriptor, temporary_path = tempfile.mkstemp(
+            prefix=".live-tail-", dir=os.path.dirname(self.path)
+        )
+        try:
+            os.fchmod(descriptor, 0o600)
+            with os.fdopen(descriptor, "wb") as replacement:
+                replacement.write(data)
+                replacement.flush()
+                os.fsync(replacement.fileno())
+            os.replace(temporary_path, self.path)
+        except Exception:
+            try:
+                os.unlink(temporary_path)
+            except FileNotFoundError:
+                pass
+            raise
+        self.bytes_written = len(data)
+        self.stream = open(self.path, "a", encoding="utf-8", errors="replace", buffering=1)
+
+    def close(self):
+        if self.stream is not None:
+            self.stream.close()
+            self.stream = None
+
+
+def _remove_live_tail(path):
+    """Best-effort cleanup for an ephemeral, active-job dashboard tail."""
+    if path is None:
+        return
     try:
-        cpu = process.cpu_times()
-        metrics["cpu_user_seconds"] = cpu.user
-        metrics["cpu_system_seconds"] = cpu.system
-    except (psutil.NoSuchProcess, psutil.AccessDenied):
+        os.unlink(path)
+    except FileNotFoundError:
         pass
+
+
+def _process_metrics(process, peak_rss=0):
+    """Collect aggregate resource use for a tracked process and its children."""
+    metrics = {
+        "rss_bytes": 0,
+        "peak_rss_bytes": peak_rss or 0,
+        "cpu_user_seconds": 0.0,
+        "cpu_system_seconds": 0.0,
+        "child_process_count": 0,
+    }
+    try:
+        processes = [process, *process.children(recursive=True)]
+    except (psutil.NoSuchProcess, psutil.AccessDenied):
+        processes = [process]
+    metrics["child_process_count"] = max(0, len(processes) - 1)
+    for candidate in processes:
+        try:
+            metrics["rss_bytes"] += candidate.memory_info().rss
+            cpu = candidate.cpu_times()
+            metrics["cpu_user_seconds"] += cpu.user
+            metrics["cpu_system_seconds"] += cpu.system
+        except (psutil.NoSuchProcess, psutil.AccessDenied):
+            continue
+    metrics["peak_rss_bytes"] = max(peak_rss, metrics["rss_bytes"])
     return metrics
 
 
@@ -228,6 +322,8 @@ def track_new(command,
     payload = tr.open_block_payloads[command]
     payload["signal"] = None
     output_stream = None
+    live_tail_stream = None
+    live_tail_path = None
     capture_state = {"bytes": 0, "truncated": False}
     metric_state = {"peak_rss": 0}
     metric_stop = threading.Event()
@@ -252,22 +348,48 @@ def track_new(command,
         if not quiet:
             print(f"Subprocess PID: {process.pid}\n")
 
+        if stdout_path is not None:
+            live_tail_path = _live_tail_path(payload["job_id"])
+            payload.setdefault("metadata", {})["live_output_fn"] = os.path.relpath(
+                live_tail_path, config._get_data_dir()
+            )
+
+        if persist:
+            database.save_job(payload)
+
         def sample_metrics():
             while not metric_stop.is_set():
-                try:
-                    metric_state["peak_rss"] = max(
-                        metric_state["peak_rss"], process.memory_info().rss
-                    )
-                except (psutil.NoSuchProcess, psutil.AccessDenied):
-                    return
-                metric_stop.wait(0.1)
+                metrics = _process_metrics(process, metric_state["peak_rss"])
+                metric_state["peak_rss"] = metrics["peak_rss_bytes"]
+                if persist:
+                    now = datetime_utils.get_iso_date()
+                    try:
+                        database.update_live_job(
+                            payload["job_id"],
+                            pid=process.pid,
+                            runtime=datetime_utils.get_runtime(payload["date_created"], now),
+                            metrics=metrics,
+                            date_modified=now,
+                        )
+                    except (OSError, sqlite3.Error):
+                        # Monitoring must never affect the child command's lifecycle.
+                        pass
+                metric_stop.wait(1.0)
 
         metric_thread = threading.Thread(target=sample_metrics, daemon=True)
         metric_thread.start()
 
         if stdout_path is not None:
-            output_stream = open(stdout_path, "w", encoding="utf-8", errors="replace")
+            output_stream = open(
+                stdout_path,
+                "w",
+                encoding="utf-8",
+                errors="replace",
+                buffering=1,
+            )
             output_stream.write(f"{command}\n----\n")
+            live_tail_stream = _LiveTailWriter(live_tail_path)
+            live_tail_stream.write(f"{command}\n----\n")
 
         timed_out = threading.Event()
         timer = None
@@ -282,12 +404,6 @@ def track_new(command,
         temp_start = time.monotonic()
         buffer = ""
         for line in process.stdout:
-            try:
-                metric_state["peak_rss"] = max(
-                    metric_state["peak_rss"], process.memory_info().rss
-                )
-            except (psutil.NoSuchProcess, psutil.AccessDenied):
-                pass
             if update_period > 0 and time.monotonic() - temp_start >= update_period:
                 payload["status"] = "running"
                 datetime_utils._update_payload_times(payload)
@@ -301,6 +417,8 @@ def track_new(command,
                 sys.stdout.flush()
             if output_stream is not None:
                 _capture_line(output_stream, line, max_output_bytes, capture_state)
+            if live_tail_stream is not None:
+                live_tail_stream.write(line)
             buffer += line
 
         if process.stdout is not None:
@@ -328,8 +446,13 @@ def track_new(command,
             timer.cancel()
         if output_stream is not None:
             output_stream.close()
+        if live_tail_stream is not None:
+            live_tail_stream.close()
 
+    if live_tail_path is not None:
+        payload.get("metadata", {}).pop("live_output_fn", None)
     payload = tr.stop(callbacks=callbacks)
+    _remove_live_tail(live_tail_path)
     if save_filename and stdout_path is not None:
         shutil.move(stdout_path, save_filename)
         payload["stdout_fn"] = os.path.abspath(save_filename)
